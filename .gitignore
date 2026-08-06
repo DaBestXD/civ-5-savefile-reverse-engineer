@@ -1,0 +1,14 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+# Civ 5 sdk source
+CvGameCoreSource
+test-save-file
+hex-converted-files

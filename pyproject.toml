@@ -1,0 +1,14 @@
+[project]
+name = "civ5-savefile-reverse-engineer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.9",
+    "ruff>=0.16.1",
+    "ty>=0.0.66",
+]
