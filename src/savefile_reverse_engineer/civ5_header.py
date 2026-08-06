@@ -147,40 +147,35 @@ def _read_string_vector(
     return tuple(reader.read_utf8(f"{field}[{index}]") for index in range(count))
 
 
-def _read_slot_claim_vector(reader: _HeaderReader, field: str) -> tuple[SlotClaim, ...]:
+def _read_enum_vector[EnumType: IntEnum](
+    reader: _HeaderReader,
+    enum_type: type[EnumType],
+    field: str,
+) -> tuple[EnumType, ...]:
     count = _read_count(reader, field, minimum_item_size=4, expected=_PLAYER_COUNT)
-    values: list[SlotClaim] = []
+    values: list[EnumType] = []
     for index in range(count):
         offset = reader.offset
         values.append(
             _enum_value(
                 reader,
-                SlotClaim,
+                enum_type,
                 reader.i32(f"{field}[{index}]"),
                 field=f"{field}[{index}]",
                 offset=offset,
             )
         )
     return tuple(values)
+
+
+def _read_slot_claim_vector(reader: _HeaderReader, field: str) -> tuple[SlotClaim, ...]:
+    return _read_enum_vector(reader, SlotClaim, field)
 
 
 def _read_slot_status_vector(
     reader: _HeaderReader, field: str
 ) -> tuple[SlotStatus, ...]:
-    count = _read_count(reader, field, minimum_item_size=4, expected=_PLAYER_COUNT)
-    values: list[SlotStatus] = []
-    for index in range(count):
-        offset = reader.offset
-        values.append(
-            _enum_value(
-                reader,
-                SlotStatus,
-                reader.i32(f"{field}[{index}]"),
-                field=f"{field}[{index}]",
-                offset=offset,
-            )
-        )
-    return tuple(values)
+    return _read_enum_vector(reader, SlotStatus, field)
 
 
 def _read_base_info(reader: _HeaderReader, field: str) -> BaseInfo:
@@ -200,15 +195,7 @@ def _read_base_info(reader: _HeaderReader, field: str) -> BaseInfo:
 def _read_climate_info(reader: _HeaderReader, field: str) -> ClimateInfo:
     base = _read_base_info(reader, field)
     return ClimateInfo(
-        id=base["id"],
-        civilopedia=base["civilopedia"],
-        description=base["description"],
-        help=base["help"],
-        disabled_help=base["disabled_help"],
-        strategy=base["strategy"],
-        type=base["type"],
-        text_key=base["text_key"],
-        text=base["text"],
+        **base,
         desert_percent_change=reader.i32(f"{field}.desert_percent_change"),
         jungle_latitude=reader.i32(f"{field}.jungle_latitude"),
         hill_range=reader.i32(f"{field}.hill_range"),
@@ -228,15 +215,7 @@ def _read_climate_info(reader: _HeaderReader, field: str) -> ClimateInfo:
 def _read_sea_level_info(reader: _HeaderReader, field: str) -> SeaLevelInfo:
     base = _read_base_info(reader, field)
     return SeaLevelInfo(
-        id=base["id"],
-        civilopedia=base["civilopedia"],
-        description=base["description"],
-        help=base["help"],
-        disabled_help=base["disabled_help"],
-        strategy=base["strategy"],
-        type=base["type"],
-        text_key=base["text_key"],
-        text=base["text"],
+        **base,
         sea_level_change=reader.i32(f"{field}.sea_level_change"),
     )
 
@@ -244,15 +223,7 @@ def _read_sea_level_info(reader: _HeaderReader, field: str) -> SeaLevelInfo:
 def _read_turn_timer_info(reader: _HeaderReader, field: str) -> TurnTimerInfo:
     base = _read_base_info(reader, field)
     return TurnTimerInfo(
-        id=base["id"],
-        civilopedia=base["civilopedia"],
-        description=base["description"],
-        help=base["help"],
-        disabled_help=base["disabled_help"],
-        strategy=base["strategy"],
-        type=base["type"],
-        text_key=base["text_key"],
-        text=base["text"],
+        **base,
         base_time=reader.i32(f"{field}.base_time"),
         city_resource=reader.i32(f"{field}.city_resource"),
         unit_resource=reader.i32(f"{field}.unit_resource"),
@@ -272,15 +243,7 @@ def _read_world_info(reader: _HeaderReader, field: str) -> WorldInfo:
     )
     base = _read_base_info(reader, field)
     return WorldInfo(
-        id=base["id"],
-        civilopedia=base["civilopedia"],
-        description=base["description"],
-        help=base["help"],
-        disabled_help=base["disabled_help"],
-        strategy=base["strategy"],
-        type=base["type"],
-        text_key=base["text_key"],
-        text=base["text"],
+        **base,
         version=version,
         default_players=reader.i32(f"{field}.default_players"),
         default_minor_civs=reader.i32(f"{field}.default_minor_civs"),

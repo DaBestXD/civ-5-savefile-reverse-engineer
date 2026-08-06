@@ -20,6 +20,7 @@ class LittleEndianReader:
     """Read bounded primitive values from an in-memory byte sequence."""
 
     __slots__: tuple[str, ...] = ("data", "offset")
+    _bounds_error_suffix: str = "bytes"
 
     data: bytes
     offset: int
@@ -152,6 +153,7 @@ class LittleEndianReader:
             )
         if available < 0 or count > available // item_size:
             self.fail(
-                f"{field} count {count} extends beyond the supplied bytes",
+                f"{field} count {count} extends beyond the supplied "
+                + self._bounds_error_suffix,
                 field=field,
             )

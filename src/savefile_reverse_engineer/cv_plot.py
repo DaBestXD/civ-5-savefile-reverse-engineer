@@ -1,6 +1,6 @@
 """Decode a complete Lekmod v34.11 CvPlot array from bytes."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from enum import IntEnum
 from typing import NoReturn, override
 
@@ -48,6 +48,7 @@ class CvPlotDecodeError(ValueError):
 
 class _Reader(LittleEndianReader):
     __slots__: tuple[str, ...] = ("plot_index",)
+    _bounds_error_suffix: str = "plot-array bytes"
 
     plot_index: int
 
@@ -70,22 +71,6 @@ class _Reader(LittleEndianReader):
             plot_index=self.plot_index,
         )
 
-    @override
-    def ensure_count_fits(
-        self,
-        count: int,
-        *,
-        item_size: int,
-        reserved_bytes: int,
-        field: str,
-    ) -> None:
-        available = self.remaining - reserved_bytes
-        if available < 0 or count > available // item_size:
-            self.fail(
-                f"{field} count {count} extends beyond the supplied plot-array bytes"
-            )
-
-
 def _read_enum[EnumType: IntEnum](
     reader: _Reader,
     enum_type: type[EnumType],
@@ -100,31 +85,35 @@ def _read_enum[EnumType: IntEnum](
         reader.fail(f"unsupported {field} value {raw_value}", offset=offset)
 
 
-def _read_i8_enum[EnumType: IntEnum](
-    reader: _Reader, enum_type: type[EnumType], *, field: str
+def _read_sized_enum[EnumType: IntEnum](
+    reader: _Reader,
+    enum_type: type[EnumType],
+    read_raw: Callable[[str], int],
+    *,
+    field: str,
 ) -> EnumType:
     offset = reader.offset
     return _read_enum(
-        reader, enum_type, reader.i8(field), field=field, offset=offset
+        reader, enum_type, read_raw(field), field=field, offset=offset
     )
+
+
+def _read_i8_enum[EnumType: IntEnum](
+    reader: _Reader, enum_type: type[EnumType], *, field: str
+) -> EnumType:
+    return _read_sized_enum(reader, enum_type, reader.i8, field=field)
 
 
 def _read_i16_enum[EnumType: IntEnum](
     reader: _Reader, enum_type: type[EnumType], *, field: str
 ) -> EnumType:
-    offset = reader.offset
-    return _read_enum(
-        reader, enum_type, reader.i16(field), field=field, offset=offset
-    )
+    return _read_sized_enum(reader, enum_type, reader.i16, field=field)
 
 
 def _read_i32_enum[EnumType: IntEnum](
     reader: _Reader, enum_type: type[EnumType], *, field: str
 ) -> EnumType:
-    offset = reader.offset
-    return _read_enum(
-        reader, enum_type, reader.i32(field), field=field, offset=offset
-    )
+    return _read_sized_enum(reader, enum_type, reader.i32, field=field)
 
 
 def _resolve_hash(hash_value: int, names: Mapping[int, str]) -> HashedType:
