@@ -12,3 +12,5 @@ wheels/
 CvGameCoreSource
 test-save-file
 hex-converted-files
+.ruff_cache
+.pytest_cache

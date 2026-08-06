@@ -48,7 +48,10 @@ physical file offset 0
 
 ### Confirmed header information
 
-The exact offsets of all variable header fields are not yet mapped. The following
+For outer version 8 and build 403694, the quick-reference fields, version-3
+slot hints, and version-6 `CvPreGame` archive can be parsed in serialization
+order. A short bridge inside the quick header remains preserved as raw,
+offset-tagged fields because its meanings are not confirmed. The following
 values are confirmed in every multiplayer save:
 
 | Field | Value |
@@ -72,6 +75,10 @@ The first chunk-length word is four bytes before the zlib header:
 ```text
 first_chunk_length_offset = zlib_header_offset - 4
 ```
+
+The physical-header decoder derives this offset by consuming the supported
+header structures. It does not search for zlib bytes. It then validates every
+length-prefixed compressed chunk through physical EOF.
 
 ### Compressed chunk layout
 
@@ -259,18 +266,64 @@ All 108,864 multiplayer plot instances were checked, and every coordinate
 matched this rule.
 
 `CvPlot` is a variable-length record. Its minimum confirmed length in Lekmod
-v34.11 is `0x625` bytes. Only the decoder-relevant anchors currently confirmed
-inside the record are listed below. The unnamed ranges still contain fixed plot
-fields described by `CvPlot::write`, but they have not all been assigned names in
-this document.
+v34.11 is `0x625` bytes. Lekmod v34.11 commit
+`f4b96af9200470ab8fe50dee3dad0dce89c16975` contains the modified version 7
+reader and writer. The following compact layout matches the examined saves.
 
 | Offset | Type | Meaning |
 |---:|---|---|
 | `+0x00` | `u32` | Plot serialization version, `7` |
+| `+0x04` | `i16` | X coordinate |
+| `+0x06` | `i16` | Y coordinate |
+| `+0x2B..+0x38` | `bool[14]` | Plot flags, including Lekmod additions at `+0x33` and `+0x38` |
+| `+0x33` | `bool` | Route was previously pillaged |
+| `+0x38` | `bool` | Forced fresh water |
+| `+0x39` | `i8` | Owner player ID; `-1` means no owner |
+| `+0x3A` | `i8` | Plot type |
+| `+0x3B` | `i8` | Terrain type |
+| `+0x3C` | `u32` hash | Feature type |
+| `+0x40` | `u32` hash | Resource type |
+| `+0x44` | `u32` hash | Current improvement type |
+| `+0x48` | `u32` hash | Under-construction improvement type |
+| `+0x4C..+0x4F` | `i8[4]` | Improvement/route/camp player fields |
+| `+0x50` | `i8` | Route type |
+| `+0x51` | `i8` | World anchor |
+| `+0x52` | `i8` | Anchor data |
+| `+0x53` | `i8` | East-edge river-flow direction |
+| `+0x54` | `i8` | Southeast-edge river-flow direction |
+| `+0x55` | `i8` | Southwest-edge river-flow direction |
 | `+0x56` | `IDInfo` | Plot city: owner and city ID |
 | `+0x5E` | `IDInfo` | Working-city or city-catchment assignment |
+| `+0x66` | `IDInfo` | Working-city override |
+| `+0x6E` | `IDInfo` | Resource-linked city |
+| `+0x76` | `IDInfo` | Purchase city |
+| `+0x7E` | `i16[7]` | Food, production, gold, science, culture, faith, Golden Age Points |
+| `+0x08C` | `i32[80]` | Found values by player |
+| `+0x1CC` | `i8[80]` | City-radius counts by player |
+| `+0x21C` | `i16[80]` | Visibility counts by team |
+| `+0x2BC` | `i8[80]` | Revealed owners by team |
+| `+0x30C` | `i8` | River-crossing byte |
+| `+0x30D` | `u32[4]` | Revealed bits |
+| `+0x31D` | `bool[80]` | Forced resource reveals |
+| `+0x36D` | `u32 hash[80]` | Revealed improvements |
+| `+0x4AD` | `i16[80]` | Revealed routes |
+| `+0x54D` | `bool[22]` | No-settling flags |
 | `+0x563` | `bool` | Has script data |
-| `+0x564` | `i32` | Outer build-progress count |
+| `+0x564` | `i32` | Outer build-progress count when script data is absent |
+
+Feature, resource, improvement, under-construction improvement, revealed
+improvement, and build type hashes use Firaxis CRC32 over the ASCII `Type`
+string:
+
+```python
+hash_value = (~zlib.crc32(type_name.encode("ascii"))) & 0xffffffff
+```
+
+For example, `IMPROVEMENT_FARM` is `0x0A0929B1` and is stored little-endian as
+`B1 29 09 0A`. Zero means no type. Build a reverse hash lookup from the exact
+effective game and mod database. See
+[Map Information](map-information.md#source-references) for commit-pinned
+Lekmod source references.
 
 No examined plot has script data.
 
@@ -286,10 +339,11 @@ When the build-progress count is zero, the fixed tail continues as follows:
 
 When build progress is present, the observed structure has outer count `70`,
 inner count `70`, 68 nonzero hashes, and two zero hashes. It adds exactly
-`0x1A4` bytes:
+`0x1A4` bytes. Entries are interleaved: each 4-byte build hash is immediately
+followed by a 2-byte progress value only when the hash is nonzero.
 
 ```text
-4 + (70 × 4) + (68 × 2) = 420 bytes = 0x1A4
+4 + (68 × (4 + 2)) + (2 × 4) = 420 bytes = 0x1A4
 ```
 
 Each unit reference adds eight bytes. The highest observed unit-reference count
