@@ -41,6 +41,15 @@ from .cv_plot_types import (
     RouteType,
     TerrainType,
 )
+from .cv_team import CvTeamDecodeError
+from .cv_team_types import (
+    CvTeam,
+    HashedValue,
+    ProjectArt,
+    TeamFlags,
+    TeamTechnology,
+    TeamYieldChanges,
+)
 
 __all__ = (
     "ArchaeologyData",
@@ -57,17 +66,21 @@ __all__ = (
     "CustomOption",
     "CvPlot",
     "CvPlotDecodeError",
+    "CvTeam",
+    "CvTeamDecodeError",
     "EnabledDlc",
     "EnabledMod",
     "FlowDirection",
     "GameMapType",
     "HashedType",
+    "HashedValue",
     "ObjectReference",
     "PlayerSlot",
     "PlotFlags",
     "PlotType",
     "PlotYields",
     "PreGameArchive",
+    "ProjectArt",
     "QuickGameMode",
     "QuickHeader",
     "RouteType",
@@ -75,6 +88,9 @@ __all__ = (
     "SlotClaim",
     "SlotHints",
     "SlotStatus",
+    "TeamFlags",
+    "TeamTechnology",
+    "TeamYieldChanges",
     "TerrainType",
     "TurnTimerInfo",
     "UnknownHeaderSpan",

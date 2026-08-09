@@ -504,3 +504,16 @@ def iterate_cv_plots_from_payload(
         plot = _read_plot(reader)
         _ = _validate_coordinates(reader, plot, plot_index, width)
         yield plot
+
+
+def locate_cv_plot_array_end(
+    payload: bytes, *, byte_offset: int, width: int, height: int
+) -> int:
+    """Return the offset immediately after a known-size payload plot array."""
+    reader = _Reader(payload)
+    reader.offset = byte_offset
+    for plot_index in range(width * height):
+        reader.plot_index = plot_index
+        plot = _read_plot(reader)
+        _ = _validate_coordinates(reader, plot, plot_index, width)
+    return reader.offset

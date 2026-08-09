@@ -3,7 +3,7 @@
 import zlib
 
 
-def _firaxis_hash(type_name: str) -> int:
+def firaxis_hash(type_name: str) -> int:
     return (~zlib.crc32(type_name.encode("ascii"))) & 0xFFFFFFFF
 
 
@@ -215,7 +215,7 @@ _BUILD_NAMES = (
 )
 
 
-FEATURE_HASH_NAMES = {_firaxis_hash(name): name for name in _FEATURE_NAMES}
-RESOURCE_HASH_NAMES = {_firaxis_hash(name): name for name in _RESOURCE_NAMES}
-IMPROVEMENT_HASH_NAMES = {_firaxis_hash(name): name for name in _IMPROVEMENT_NAMES}
-BUILD_HASH_NAMES = {_firaxis_hash(name): name for name in _BUILD_NAMES}
+FEATURE_HASH_NAMES = {firaxis_hash(name): name for name in _FEATURE_NAMES}
+RESOURCE_HASH_NAMES = {firaxis_hash(name): name for name in _RESOURCE_NAMES}
+IMPROVEMENT_HASH_NAMES = {firaxis_hash(name): name for name in _IMPROVEMENT_NAMES}
+BUILD_HASH_NAMES = {firaxis_hash(name): name for name in _BUILD_NAMES}

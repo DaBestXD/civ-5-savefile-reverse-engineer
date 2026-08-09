@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import override
 
 
 class PlotType(IntEnum):
@@ -55,6 +56,10 @@ class HashedType:
 
     hash_value: int
     name: str | None
+
+    @override
+    def __str__(self) -> str:
+        return self.name if self.name else "Unknown"
 
 
 @dataclass(slots=True)

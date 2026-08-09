@@ -9,6 +9,7 @@ from savefile_reverse_engineer import (
     Civ5SaveDecoder,
     Civ5SavePayloadDecodeError,
     CvPlotDecodeError,
+    CvTeamDecodeError,
 )
 
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -147,3 +148,82 @@ def test_plot_errors_report_absolute_payload_offsets(tmp_path: Path) -> None:
         _ = next(plots)
 
     assert raised.value.offset == first_plot_offset
+
+
+def test_iterates_multiplayer_teams_with_absolute_payload_offsets() -> None:
+    decoder = Civ5SaveDecoder(_MULTIPLAYER_PATH)
+    teams = tuple(decoder.iter_cv_teams())
+
+    assert len(teams) == 64
+    assert teams[0].team_id == 0
+    assert teams[0].byte_offset == 0x35298D
+    assert teams[-1].team_id == 63
+    assert teams[-1].byte_offset + teams[-1].byte_length == 0x42328D
+
+    repeated_first = next(decoder.iter_cv_teams())
+    assert repeated_first == teams[0]
+    assert repeated_first is not teams[0]
+
+
+def test_iterates_single_player_teams_after_variable_map_tail() -> None:
+    teams = tuple(Civ5SaveDecoder(_SINGLE_PLAYER_PATH).iter_cv_teams())
+
+    assert len(teams) == 64
+    assert teams[0].byte_offset == 0x4DBE3B
+    assert teams[-1].byte_offset + teams[-1].byte_length == 0x5AC73B
+
+
+def test_rejects_invalid_cv_map_free_list_framing(tmp_path: Path) -> None:
+    payload = bytearray(Civ5SaveDecoder(_MULTIPLAYER_PATH).decompress_payload())
+    area_list_offset = 0x31DB17
+    payload[area_list_offset : area_list_offset + 4] = (0xFFFFFFFF).to_bytes(
+        4, byteorder="little"
+    )
+    decoder = _decoder_with_payload(
+        tmp_path, bytes(payload), "bad-area-free-list.Civ5Save"
+    )
+
+    with pytest.raises(Civ5SavePayloadDecodeError) as raised:
+        _ = decoder.iter_cv_teams()
+
+    assert raised.value.offset == area_list_offset
+    assert raised.value.field == "cv_map.areas.slot_count"
+
+
+def test_accepts_maximum_cv_map_free_list_capacity(tmp_path: Path) -> None:
+    payload = bytearray(Civ5SaveDecoder(_MULTIPLAYER_PATH).decompress_payload())
+    area_list_offset = 0x31DB17
+    original_slot_count = 64
+    maximum_slot_count = 1 << 13
+    payload[area_list_offset : area_list_offset + 4] = maximum_slot_count.to_bytes(
+        4, byteorder="little"
+    )
+    next_free_indices_end = area_list_offset + 20 + original_slot_count * 4
+    added_indices = b"\xff\xff\xff\xff" * (
+        maximum_slot_count - original_slot_count
+    )
+    payload[next_free_indices_end:next_free_indices_end] = added_indices
+    decoder = _decoder_with_payload(
+        tmp_path, bytes(payload), "maximum-area-free-list.Civ5Save"
+    )
+
+    teams = tuple(decoder.iter_cv_teams())
+
+    assert len(teams) == 64
+    assert teams[0].byte_offset == 0x35298D + len(added_indices)
+
+
+def test_team_errors_report_absolute_payload_offsets(tmp_path: Path) -> None:
+    payload = bytearray(Civ5SaveDecoder(_MULTIPLAYER_PATH).decompress_payload())
+    first_team_offset = 0x35298D
+    payload[first_team_offset : first_team_offset + 4] = (2).to_bytes(
+        4, byteorder="little"
+    )
+    decoder = _decoder_with_payload(tmp_path, bytes(payload), "bad-team.Civ5Save")
+
+    teams = decoder.iter_cv_teams()
+    with pytest.raises(CvTeamDecodeError) as raised:
+        _ = next(teams)
+
+    assert raised.value.team_index == 0
+    assert raised.value.offset == first_team_offset
