@@ -120,6 +120,19 @@ def test_city_and_unit_iterators_preserve_semantic_ownership() -> None:
     assert cities[0] is next(decoder.iter_cities())
     assert units[0] is next(decoder.iter_units())
     assert cities[0] is next(decoder.iter_players()).cities[0]
+    assert decoder.get_owner_display_name(cities[0]) == "Brad, From Algebra"
+    assert decoder.get_owner_display_name(units[0]) == "Brad, From Algebra"
+
+
+def test_get_owner_display_name_supports_plots_and_loads_players() -> None:
+    decoder = Civ5SaveDecoder(_SAVE_PATH)
+    plots = tuple(decoder.iter_plots())
+    owned_plot = next(plot for plot in plots if plot.owner_player_index == 0)
+    unowned_plot = next(plot for plot in plots if plot.owner_player_index < 0)
+
+    assert decoder.get_owner_display_name(owned_plot) == "Brad, From Algebra"
+    assert decoder.get_owner_display_name(unowned_plot) is None
+    assert next(decoder.iter_players()).display_name == "Brad, From Algebra"
 
 
 def test_player_iterator_includes_saved_display_names() -> None:

@@ -561,6 +561,12 @@ class Civ5SaveDecoder:
             self._player_display_names_cache = names
         return names
 
+    def get_owner_display_name(
+        self, owned_object: CvCity | CvPlot | CvUnit
+    ) -> str | None:
+        """Return an owned object's player name, decoding players on first use."""
+        return self.player_display_names.get(owned_object.owner_player_index)
+
     def iter_cities(self) -> Iterator[CvCity]:
         """Return a fresh lazy iterator over participant-owned cities."""
         cities = self._cities_cache

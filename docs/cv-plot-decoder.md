@@ -5,10 +5,15 @@
 ```python
 from savefile_reverse_engineer import Civ5SaveDecoder
 
-for plot in Civ5SaveDecoder("AutoSave.Civ5Save").iter_plots():
+decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
+for plot in decoder.iter_plots():
     print(plot.x, plot.y, plot.owner_player_index, plot.terrain)
+    print(decoder.get_owner_display_name(plot))
     print(plot.feature.key, plot.resource.key, plot.yields.food)
 ```
+
+The first `get_owner_display_name()` call decodes and caches participating
+players if needed. Unowned plots and unresolved player names return `None`.
 
 The semantic `CvPlot` contains common confirmed game state. Database hashes are
 represented by `GameType(hash_value, key)`. Unknown keys remain `None`; exact
