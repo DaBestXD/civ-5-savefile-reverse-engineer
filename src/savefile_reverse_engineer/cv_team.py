@@ -543,12 +543,4 @@ def iterate_teams_from_payload_impl(
         yield _read_team(reader, team_index)
 
 
-def locate_team_array_end_impl(payload: bytes, *, byte_offset: int) -> int:
-    """Return the first byte after the 64 structurally decoded teams."""
-    reader = _Reader(payload, byte_offset)
-    for team_index in range(_TEAM_COUNT):
-        _ = _read_team(reader, team_index)
-    return reader.offset
-
-
 __all__: tuple[str, ...] = ()

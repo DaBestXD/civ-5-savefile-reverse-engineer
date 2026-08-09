@@ -8,7 +8,7 @@ from savefile_reverse_engineer import (
     Civ5SaveDecoder,
     CvPlayerDecodeError,
 )
-from savefile_reverse_engineer._cv_plot_hashes import firaxis_hash
+from savefile_reverse_engineer._firaxis_hash import firaxis_hash
 from savefile_reverse_engineer.cv_player import (
     _read_city_buildings,  # pyright: ignore[reportPrivateUsage]
     iterate_players_from_payload_impl,

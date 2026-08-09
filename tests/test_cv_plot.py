@@ -15,6 +15,7 @@ from savefile_reverse_engineer.raw import (
     TerrainType,
     decode_plot_array_bytes,
 )
+from tests._binary_helpers import replace_unsigned
 
 _FIXTURE_PATH = Path(__file__).parent / "test_data/cv_plot/turn_76_plot_array.bin"
 _FIXTURE_BYTES = _FIXTURE_PATH.read_bytes()
@@ -22,11 +23,6 @@ _BASE_PLOT_LENGTH = 0x625
 _BUILD_PLOT_OFFSET = 640_211
 _BUILD_PLOT_LENGTH = 2_001
 _LAST_PLOT_OFFSET = 3_240_003
-
-
-def _replace_unsigned(data: bytes, offset: int, size: int, value: int) -> bytes:
-    replacement = value.to_bytes(size, byteorder="little", signed=False)
-    return data[:offset] + replacement + data[offset + size :]
 
 
 def _consume(data: bytes) -> tuple[CvPlot, ...]:
@@ -92,8 +88,8 @@ def test_decodes_build_progress_and_unit_references() -> None:
     ]
     # A standalone array must start at (0, 0), so retain its bytes but
     # replace only the two serialized coordinate fields for this test.
-    build_blob = _replace_unsigned(build_blob, 4, 2, 0)
-    build_blob = _replace_unsigned(build_blob, 6, 2, 0)
+    build_blob = replace_unsigned(build_blob, 4, 2, 0)
+    build_blob = replace_unsigned(build_blob, 6, 2, 0)
     plot = next(decode_plot_array_bytes(build_blob))
 
     assert plot.outer_build_count == 70
@@ -107,7 +103,7 @@ def test_decodes_build_progress_and_unit_references() -> None:
 
 def test_unknown_hash_keeps_integer_and_none_name() -> None:
     unknown_hash = 0x12345678
-    data = _replace_unsigned(_FIXTURE_BYTES, 0x3C, 4, unknown_hash)
+    data = replace_unsigned(_FIXTURE_BYTES, 0x3C, 4, unknown_hash)
     plot = next(decode_plot_array_bytes(data))
 
     assert plot.feature.hash_value == unknown_hash
@@ -117,7 +113,7 @@ def test_unknown_hash_keeps_integer_and_none_name() -> None:
 def test_supports_archaeology_version_one() -> None:
     base_plot = _FIXTURE_BYTES[:_BASE_PLOT_LENGTH]
     archaeology_offset = _BASE_PLOT_LENGTH - 24
-    version_one = _replace_unsigned(base_plot, archaeology_offset, 4, 1)[:-4]
+    version_one = replace_unsigned(base_plot, archaeology_offset, 4, 1)[:-4]
     plot = next(decode_plot_array_bytes(version_one))
 
     assert plot.archaeology.version == 1
@@ -143,9 +139,9 @@ def test_rejects_empty_and_truncated_input() -> None:
 
 
 def test_rejects_invalid_version_boolean_and_enum() -> None:
-    invalid_version = _replace_unsigned(_FIXTURE_BYTES, 0, 4, 6)
-    invalid_boolean = _replace_unsigned(_FIXTURE_BYTES, 0x2B, 1, 2)
-    invalid_enum = _replace_unsigned(_FIXTURE_BYTES, 0x3A, 1, 9)
+    invalid_version = replace_unsigned(_FIXTURE_BYTES, 0, 4, 6)
+    invalid_boolean = replace_unsigned(_FIXTURE_BYTES, 0x2B, 1, 2)
+    invalid_enum = replace_unsigned(_FIXTURE_BYTES, 0x3A, 1, 9)
 
     with pytest.raises(CvPlotDecodeError, match="CvPlot version"):
         _ = next(decode_plot_array_bytes(invalid_version))
@@ -156,9 +152,9 @@ def test_rejects_invalid_version_boolean_and_enum() -> None:
 
 
 def test_rejects_script_data_and_unsupported_counts() -> None:
-    script_data = _replace_unsigned(_FIXTURE_BYTES, 0x563, 1, 1)
-    invalid_build_count = _replace_unsigned(_FIXTURE_BYTES, 0x564, 4, 1)
-    invalid_unit_count = _replace_unsigned(_FIXTURE_BYTES, 0x608, 4, 0xFFFFFFFF)
+    script_data = replace_unsigned(_FIXTURE_BYTES, 0x563, 1, 1)
+    invalid_build_count = replace_unsigned(_FIXTURE_BYTES, 0x564, 4, 1)
+    invalid_unit_count = replace_unsigned(_FIXTURE_BYTES, 0x608, 4, 0xFFFFFFFF)
 
     with pytest.raises(CvPlotDecodeError, match="script data"):
         _ = next(decode_plot_array_bytes(script_data))
@@ -170,7 +166,7 @@ def test_rejects_script_data_and_unsupported_counts() -> None:
 
 def test_rejects_unsupported_archaeology_and_trailing_bytes() -> None:
     archaeology_offset = _BASE_PLOT_LENGTH - 24
-    invalid_archaeology = _replace_unsigned(_FIXTURE_BYTES, archaeology_offset, 4, 3)
+    invalid_archaeology = replace_unsigned(_FIXTURE_BYTES, archaeology_offset, 4, 3)
 
     with pytest.raises(CvPlotDecodeError, match="archaeology version"):
         _ = next(decode_plot_array_bytes(invalid_archaeology))
@@ -179,7 +175,7 @@ def test_rejects_unsupported_archaeology_and_trailing_bytes() -> None:
 
 
 def test_rejects_coordinate_errors_and_incomplete_final_row() -> None:
-    invalid_second_x = _replace_unsigned(_FIXTURE_BYTES, _BASE_PLOT_LENGTH + 4, 2, 9)
+    invalid_second_x = replace_unsigned(_FIXTURE_BYTES, _BASE_PLOT_LENGTH + 4, 2, 9)
     missing_final_plot = _FIXTURE_BYTES[:_LAST_PLOT_OFFSET]
 
     with pytest.raises(CvPlotDecodeError, match="row-major"):

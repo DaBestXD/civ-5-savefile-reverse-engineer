@@ -1,11 +1,6 @@
 """Lekmod v34.11 database type catalogues used by CvPlot."""
 
-import zlib
-
-
-def firaxis_hash(type_name: str) -> int:
-    return (~zlib.crc32(type_name.encode("ascii"))) & 0xFFFFFFFF
-
+from ._firaxis_hash import firaxis_hash
 
 _FEATURE_NAMES = (
     "FEATURE_ICE",

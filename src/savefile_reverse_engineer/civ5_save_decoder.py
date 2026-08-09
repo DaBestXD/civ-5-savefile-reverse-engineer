@@ -24,7 +24,7 @@ from .civ5_header_types import Civ5SaveHeader as RawCiv5SaveHeader
 from .cv_player import iterate_players_from_payload_impl
 from .cv_player_types import CvPlayer as RawCvPlayer
 from .cv_plot import iterate_plots_from_payload_impl, locate_plot_array_end_impl
-from .cv_team import iterate_teams_from_payload_impl, locate_team_array_end_impl
+from .cv_team import iterate_teams_from_payload_impl
 from .cv_team_types import CvTeam as RawCvTeam
 from .models import (
     CvCity,
@@ -370,13 +370,24 @@ class Civ5SaveDecoder:
             self._payload_cache = payload
         return payload
 
-    def iter_plots(self) -> Iterator[CvPlot]:
-        """Return a fresh lazy iterator over every plot in the save's CvMap."""
-        payload = self.payload_bytes
+    def _get_plot_location(self, payload: bytes) -> _CvPlotLocation:
         location = self._plot_location_cache
         if location is None:
             location = _locate_cv_plots(payload)
             self._plot_location_cache = location
+        return location
+
+    def _get_team_location(self, payload: bytes) -> _CvTeamLocation:
+        location = self._team_location_cache
+        if location is None:
+            location = _locate_cv_teams(payload, self._get_plot_location(payload))
+            self._team_location_cache = location
+        return location
+
+    def iter_plots(self) -> Iterator[CvPlot]:
+        """Return a fresh lazy iterator over every plot in the save's CvMap."""
+        payload = self.payload_bytes
+        location = self._get_plot_location(payload)
         raw_plots = iterate_plots_from_payload_impl(
             payload,
             byte_offset=location.byte_offset,
@@ -387,14 +398,7 @@ class Civ5SaveDecoder:
 
     def _iter_raw_teams(self) -> Iterator[RawCvTeam]:
         payload = self.payload_bytes
-        plot_location = self._plot_location_cache
-        if plot_location is None:
-            plot_location = _locate_cv_plots(payload)
-            self._plot_location_cache = plot_location
-        team_location = self._team_location_cache
-        if team_location is None:
-            team_location = _locate_cv_teams(payload, plot_location)
-            self._team_location_cache = team_location
+        team_location = self._get_team_location(payload)
         return iterate_teams_from_payload_impl(
             payload, byte_offset=team_location.byte_offset
         )
@@ -416,22 +420,14 @@ class Civ5SaveDecoder:
         payload = self.payload_bytes
         location = self._player_location_cache
         if location is None:
-            plot_location = self._plot_location_cache
-            if plot_location is None:
-                plot_location = _locate_cv_plots(payload)
-                self._plot_location_cache = plot_location
-            team_location = self._team_location_cache
-            if team_location is None:
-                team_location = _locate_cv_teams(payload, plot_location)
-                self._team_location_cache = team_location
+            team_location = self._get_team_location(payload)
             teams = tuple(
                 iterate_teams_from_payload_impl(
                     payload, byte_offset=team_location.byte_offset
                 )
             )
-            player_offset = locate_team_array_end_impl(
-                payload, byte_offset=team_location.byte_offset
-            )
+            final_team = teams[-1]
+            player_offset = final_team.byte_offset + final_team.byte_length
             location = _CvPlayerLocation(
                 byte_offset=player_offset,
                 expected_totals=tuple(

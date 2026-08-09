@@ -14,6 +14,7 @@ from savefile_reverse_engineer.raw import (
     SlotClaim,
     SlotStatus,
 )
+from tests._binary_helpers import replace_unsigned
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _MULTIPLAYER_PATH = (
@@ -30,11 +31,6 @@ pytestmark = pytest.mark.skipif(
     not _HAS_SAMPLE_SAVES,
     reason="local sample saves are unavailable",
 )
-
-
-def _replace_unsigned(data: bytes, offset: int, size: int, value: int) -> bytes:
-    replacement = value.to_bytes(size, byteorder="little", signed=False)
-    return data[:offset] + replacement + data[offset + size :]
 
 
 def _decoder_for_bytes(tmp_path: Path, data: bytes, name: str) -> Civ5SaveDecoder:
@@ -205,7 +201,7 @@ def test_rejects_invalid_signature_version_and_chunks(tmp_path: Path) -> None:
     with pytest.raises(Civ5SaveHeaderDecodeError, match="outer_version"):
         _ = _decoder_for_bytes(
             tmp_path,
-            _replace_unsigned(data, 4, 4, 7),
+            replace_unsigned(data, 4, 4, 7),
             "bad-version.Civ5Save",
         ).raw_header
     with pytest.raises(Civ5SaveHeaderDecodeError, match="length is zero"):

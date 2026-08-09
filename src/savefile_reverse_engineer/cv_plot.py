@@ -497,9 +497,13 @@ def iterate_plots_from_payload_impl(
     """Yield a known-size CvPlot array from a decompressed save payload."""
     reader = _Reader(payload)
     reader.offset = byte_offset
-    plot_count = width * height
+    yield from _iterate_known_cv_plot_array(reader, width, height)
 
-    for plot_index in range(plot_count):
+
+def _iterate_known_cv_plot_array(
+    reader: _Reader, width: int, height: int
+) -> Iterator[CvPlot]:
+    for plot_index in range(width * height):
         reader.plot_index = plot_index
         plot = _read_plot(reader)
         _ = _validate_coordinates(reader, plot, plot_index, width)
@@ -512,10 +516,8 @@ def locate_plot_array_end_impl(
     """Return the offset immediately after a known-size payload plot array."""
     reader = _Reader(payload)
     reader.offset = byte_offset
-    for plot_index in range(width * height):
-        reader.plot_index = plot_index
-        plot = _read_plot(reader)
-        _ = _validate_coordinates(reader, plot, plot_index, width)
+    for _ in _iterate_known_cv_plot_array(reader, width, height):
+        pass
     return reader.offset
 
 

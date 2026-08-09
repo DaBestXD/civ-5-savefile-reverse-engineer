@@ -88,12 +88,6 @@ class _Reader(LittleEndianReader):
 class _HeaderCandidate:
     offset: int
     byte_length: int
-    slot_count: int
-    last_index: int
-    free_list_head: int
-    free_count: int
-    current_id: int
-    live_count: int
 
 
 @dataclass(slots=True)
@@ -154,12 +148,6 @@ def _try_free_list_header(
     return _HeaderCandidate(
         offset=offset,
         byte_length=24 + slot_count * 4,
-        slot_count=slot_count,
-        last_index=last_index,
-        free_list_head=free_list_head,
-        free_count=free_count,
-        current_id=current_id,
-        live_count=live_count,
     )
 
 
@@ -941,14 +929,6 @@ def decode_player_array_bytes_impl(
             field="player_array",
         )
     records = _locate_player_records(player_array_bytes, 0, require_exact_end=True)
-    array_end = records[-1][1]
-    if array_end != len(player_array_bytes):
-        raise CvPlayerDecodeError(
-            f"{len(player_array_bytes) - array_end} trailing bytes follow the player array",
-            offset=array_end,
-            player_index=_PLAYER_COUNT - 1,
-            field="player_array",
-        )
     return (
         _read_player(
             player_array_bytes,
