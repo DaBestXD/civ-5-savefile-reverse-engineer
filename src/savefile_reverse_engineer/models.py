@@ -31,6 +31,15 @@ class SlotStatus(IntEnum):
     OBSERVER = 4
 
 
+class PlayerType(IntEnum):
+    """Broad category of a participating player."""
+
+    PLAYER = 0
+    COMPUTER = 1
+    CITY_STATE = 2
+    BARBARIAN = 3
+
+
 class PlotType(IntEnum):
     """A plot's broad map type."""
 
@@ -254,6 +263,7 @@ class CvCity:
 
     owner_player_index: int
     city_id: int
+    name_key: str
     x: int
     y: int
     rally_x: int
@@ -287,6 +297,8 @@ class CvPlayer:
     """Confirmed semantic fields for one participating player."""
 
     player_index: int
+    player_type: PlayerType
+    display_name: str | None
     starting_x: int
     starting_y: int
     total_population: int

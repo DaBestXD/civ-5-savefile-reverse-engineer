@@ -11,12 +11,16 @@ import savefile_reverse_engineer.raw as raw_api
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
     GameMode,
+    PlayerType,
     SlotStatus,
 )
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SAVE_PATH = (
     _PROJECT_ROOT / "test-save-file/multi-player/AutoSave_Post_0076 AD-0040.Civ5Save"
+)
+_SINGLE_PLAYER_PATH = (
+    _PROJECT_ROOT / "test-save-file/single-player/j-AutoSave_0040 BC-1600.Civ5Save"
 )
 
 pytestmark = pytest.mark.skipif(
@@ -30,6 +34,7 @@ def test_package_root_exports_only_the_curated_api() -> None:
     assert "Civ5SaveDecoder" in exports
     assert "SaveSummary" in exports
     assert "GameSettings" in exports
+    assert "PlayerType" in exports
     assert "SerializedFreeList" not in exports
     assert "CompressedChunk" not in exports
     assert "UnknownHeaderSpan" not in exports
@@ -110,5 +115,34 @@ def test_city_and_unit_iterators_preserve_semantic_ownership() -> None:
     assert cities
     assert units
     assert all(city.owner_player_index >= 0 for city in cities)
+    assert cities[0].name_key == "TXT_KEY_CITY_NAME_VENEZ"
     assert all(unit.owner_player_index >= 0 for unit in units)
     assert cities[0] == next(decoder.iter_players()).cities[0]
+
+
+def test_player_iterator_includes_saved_display_names() -> None:
+    players = tuple(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+
+    assert players[0].display_name == "Brad, From Algebra"
+    assert players[0].player_type is PlayerType.PLAYER
+    assert players[3].display_name == "TXT_KEY_CITYSTATE_MEXICO"
+    assert players[3].player_type is PlayerType.CITY_STATE
+
+
+@pytest.mark.skipif(
+    not _SINGLE_PLAYER_PATH.is_file(),
+    reason="the local single-player Lekmod save is unavailable",
+)
+def test_computer_display_names_use_leader_or_city_name_keys() -> None:
+    players = {
+        player.player_index: player
+        for player in Civ5SaveDecoder(_SINGLE_PLAYER_PATH).iter_players()
+    }
+
+    assert players[1].display_name == "LEADER_MACEDON"
+    assert players[1].player_type is PlayerType.COMPUTER
+    assert players[22].display_name == "TXT_KEY_CITYSTATE_KYRENE"
+    assert players[22].player_type is PlayerType.CITY_STATE
+    assert players[32].display_name == "TXT_KEY_CITYSTATE_GENEVA"
+    assert players[63].display_name == "LEADER_BARBARIAN"
+    assert players[63].player_type is PlayerType.BARBARIAN

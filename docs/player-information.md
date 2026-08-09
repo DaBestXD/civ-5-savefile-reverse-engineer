@@ -104,7 +104,8 @@ with the following confirmed fields:
 | `+0x38` | Culture level |
 
 The decoder follows the remaining source-order fields before the building
-object to validate the city start. Most of those values are not exposed.
+object to validate the city start. It exposes the length-prefixed UTF-8 city
+localization key as `name_key`. Most of the other values are not exposed.
 
 ## Confirmed CvCityBuildings inventory
 

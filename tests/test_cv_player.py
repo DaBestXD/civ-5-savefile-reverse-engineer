@@ -55,6 +55,18 @@ def test_decodes_participant_players_and_nested_objects() -> None:
     assert players[0].total_land == 56
     assert players[0].culture_x100 == 23_000
     assert players[0].faith == 62
+    assert [player.display_name for player in players[:3]] == [
+        "Brad, From Algebra",
+        "PostiveMentalAttitude",
+        "Wyldmaenn",
+    ]
+    assert [player.display_name for player in players[3:]] == [
+        "TXT_KEY_CITYSTATE_MEXICO",
+        "TXT_KEY_CITYSTATE_LA_VENTA",
+        "TXT_KEY_CITYSTATE_PRAGUE",
+        "TXT_KEY_CITYSTATE_HONG_KONG",
+        "LEADER_BARBARIAN",
+    ]
     assert len(players[0].cities) == 4
     assert len(players[0].units) == 16
     assert players[-1].cities == ()
@@ -67,6 +79,12 @@ def test_decodes_semantic_city_fields_and_ownership() -> None:
     cities = player.cities
 
     assert [city.city_id for city in cities] == [8192, 16385, 24578, 32771]
+    assert [city.name_key for city in cities] == [
+        "TXT_KEY_CITY_NAME_VENEZ",
+        "TXT_KEY_CITY_NAME_RAGUZ",
+        "TXT_KEY_CITY_NAME_CANDIA",
+        "TXT_KEY_CITY_NAME_ZARA",
+    ]
     assert {city.owner_player_index for city in cities} == {0}
     assert [(city.x, city.y) for city in cities] == [
         (11, 16),

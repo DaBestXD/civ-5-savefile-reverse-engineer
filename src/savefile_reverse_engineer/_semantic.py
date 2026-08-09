@@ -34,6 +34,7 @@ from .models import (
     GameType,
     ObjectReference,
     PlayerSlot,
+    PlayerType,
     PlotFlags,
     PlotType,
     PlotYields,
@@ -183,6 +184,7 @@ def _city(city: RawCvCity, owner_player_index: int) -> CvCity:
     return CvCity(
         owner_player_index=owner_player_index,
         city_id=city.city_id,
+        name_key=city.name_key,
         x=city.x,
         y=city.y,
         rally_x=city.rally_x,
@@ -221,11 +223,18 @@ def _unit(unit: RawCvUnit, owner_player_index: int) -> CvUnit:
     )
 
 
-def make_player(player: RawCvPlayer) -> CvPlayer:
+def make_player(
+    player: RawCvPlayer,
+    *,
+    display_name: str | None,
+    player_type: PlayerType,
+) -> CvPlayer:
     """Create a semantic player and its nested cities and units."""
     owner = player.player_index
     return CvPlayer(
         player_index=owner,
+        player_type=player_type,
+        display_name=display_name,
         starting_x=player.starting_x,
         starting_y=player.starting_y,
         total_population=player.total_population,

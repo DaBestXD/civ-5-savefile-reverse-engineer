@@ -34,6 +34,7 @@ from .models import (
     CvUnit,
     GameSettings,
     PlayerSlot,
+    PlayerType,
     SaveSummary,
     SlotStatus,
 )
@@ -47,6 +48,30 @@ _CIV_PLAYER_COUNT = 64
 _YIELD_COUNT = 7
 _RESOURCE_COUNT = 57
 _IMPROVEMENT_COUNT = 46
+_MINOR_CIVILIZATION_KEY = "CIVILIZATION_MINOR"
+_BARBARIAN_CIVILIZATION_KEY = "CIVILIZATION_BARBARIAN"
+
+
+def _player_display_name(player: RawCvPlayer, slot: PlayerSlot) -> str | None:
+    if slot.display_name is not None:
+        return slot.display_name
+    if slot.status is not SlotStatus.COMPUTER:
+        return None
+    if slot.civilization_key != _MINOR_CIVILIZATION_KEY:
+        return slot.leader_key
+    if not player.cities.entries:
+        return None
+    return player.cities.entries[0].name_key
+
+
+def _player_type(slot: PlayerSlot) -> PlayerType:
+    if slot.civilization_key == _MINOR_CIVILIZATION_KEY:
+        return PlayerType.CITY_STATE
+    if slot.civilization_key == _BARBARIAN_CIVILIZATION_KEY:
+        return PlayerType.BARBARIAN
+    if slot.status is SlotStatus.TAKEN:
+        return PlayerType.PLAYER
+    return PlayerType.COMPUTER
 
 
 class Civ5SavePayloadDecodeError(ValueError):
@@ -443,15 +468,21 @@ class Civ5SaveDecoder:
 
     def iter_players(self) -> Iterator[CvPlayer]:
         """Return players whose saved slots are human- or computer-controlled."""
-        participant_indices = {
-            slot.player_index
+        participant_slots = {
+            slot.player_index: slot
             for slot in self.player_slots
             if slot.status in (SlotStatus.TAKEN, SlotStatus.COMPUTER)
         }
         return (
-            make_player(player)
+            make_player(
+                player,
+                display_name=_player_display_name(
+                    player, participant_slots[player.player_index]
+                ),
+                player_type=_player_type(participant_slots[player.player_index]),
+            )
             for player in self._iter_raw_players()
-            if player.player_index in participant_indices
+            if player.player_index in participant_slots
         )
 
     def iter_cities(self) -> Iterator[CvCity]:

@@ -9,9 +9,15 @@ from savefile_reverse_engineer import Civ5SaveDecoder
 
 decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
 for player in decoder.iter_players():
-    print(player.player_index, player.faith, player.culture_x100)
+    print(
+        player.player_index,
+        player.player_type,
+        player.display_name,
+        player.faith,
+        player.culture_x100,
+    )
     for city in player.cities:
-        print(city.owner_player_index, city.city_id, city.population)
+        print(city.owner_player_index, city.city_id, city.name_key, city.population)
         for state in city.buildings:
             if state.real_count > 0 or state.free_count > 0:
                 print(state.building_type.key)
@@ -21,6 +27,17 @@ for player in decoder.iter_players():
 
 `iter_cities()` and `iter_units()` flatten the participant-owned nested
 records. Every returned city and unit carries its `owner_player_index`.
+Each city also provides the saved localization key through `city.name_key`,
+for example `TXT_KEY_CITY_NAME_VENEZ`.
+
+Each player provides its saved multiplayer nickname through
+`player.display_name`. A computer-controlled major civilization uses its
+`leader_key`. A computer-controlled city state uses its first saved city's
+`name_key`, such as `TXT_KEY_CITYSTATE_GENEVA`. A defeated city state with no
+remaining city uses `None`.
+
+`player.player_type` is a `PlayerType` enum value: `PLAYER`, `COMPUTER`,
+`CITY_STATE`, or `BARBARIAN`.
 
 Semantic records omit byte locations, serialization versions, free-list slot
 metadata, and zero-hash building placeholders. City-wide building values are

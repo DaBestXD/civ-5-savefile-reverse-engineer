@@ -24,10 +24,16 @@ print(decoder.summary.turn)
 print(decoder.settings.game_name)
 
 for player in decoder.iter_players():
-    print(player.player_index, player.faith, len(player.cities))
+    print(
+        player.player_index,
+        player.player_type,
+        player.display_name,
+        player.faith,
+        len(player.cities),
+    )
 
 for city in decoder.iter_cities():
-    print(city.owner_player_index, city.city_id, city.population)
+    print(city.owner_player_index, city.city_id, city.name_key, city.population)
 
 for plot in decoder.iter_plots():
     print(plot.x, plot.y, plot.terrain)

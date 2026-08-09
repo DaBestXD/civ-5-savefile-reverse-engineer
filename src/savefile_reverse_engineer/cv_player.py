@@ -94,6 +94,13 @@ class _HeaderCandidate:
 class _CityCandidate:
     offset: int
     buildings_offset: int
+    name_key: str
+
+
+@dataclass(slots=True)
+class _CityProbe:
+    buildings_offset: int
+    name_key: str
 
 
 @dataclass(slots=True)
@@ -400,7 +407,7 @@ def _try_locate_city_buildings(
     start: int,
     end: int,
     player_index: int,
-) -> int | None:
+) -> _CityProbe | None:
     reader = _Reader(data, start, player_index)
     try:
         _ = reader.read_bytes(15 * 4, "cities.probe.confirmed_prefix")
@@ -434,7 +441,7 @@ def _try_locate_city_buildings(
             )
         _ = reader.read_bool("cities.probe.finished_order_this_turn")
         _ = reader.i32("cities.probe.settler_unit_type")
-        _ = reader.read_utf8("cities.probe.name")
+        name_key = reader.read_utf8("cities.probe.name")
         _ = reader.read_utf8("cities.probe.script_data")
         for index in range(3):
             _skip_exact_hashed_int_array(
@@ -456,7 +463,7 @@ def _try_locate_city_buildings(
         return None
     if reader.offset > end:
         return None
-    return reader.offset
+    return _CityProbe(buildings_offset=reader.offset, name_key=name_key)
 
 
 def _find_city_candidates(
@@ -495,17 +502,18 @@ def _find_city_candidates(
                 and _i32(data, candidate_offset + 32) >= 0
             )
             if has_valid_prefix:
-                buildings_offset = _try_locate_city_buildings(
+                probe = _try_locate_city_buildings(
                     data,
                     start=candidate_offset,
                     end=end,
                     player_index=player_index,
                 )
-                if buildings_offset is not None:
+                if probe is not None:
                     candidates_by_slot[slot_index].append(
                         _CityCandidate(
                             offset=candidate_offset,
-                            buildings_offset=buildings_offset,
+                            buildings_offset=probe.buildings_offset,
+                            name_key=probe.name_key,
                         )
                     )
         candidate_offset += 1
@@ -695,6 +703,7 @@ def _read_city(
     record_index: int,
     slot_index: int,
     player_index: int,
+    name_key: str,
 ) -> CvCity:
     reader = _Reader(data, start, player_index)
     field = f"cities.entries[{record_index}]"
@@ -725,6 +734,7 @@ def _read_city(
         byte_length=end - start,
         version=version,
         city_id=city_id,
+        name_key=name_key,
         x=reader.i32(f"{field}.x"),
         y=reader.i32(f"{field}.y"),
         rally_x=reader.i32(f"{field}.rally_x"),
@@ -827,6 +837,7 @@ def _read_player(
             record_index=index,
             slot_index=city_header.live_slots[index],
             player_index=player_index,
+            name_key=city_candidate.name_key,
         )
         for index, city_candidate in enumerate(city_candidates)
     )

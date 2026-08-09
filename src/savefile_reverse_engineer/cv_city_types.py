@@ -48,6 +48,7 @@ class CvCity:
     byte_length: int
     version: int
     city_id: int
+    name_key: str
     x: int
     y: int
     rally_x: int
