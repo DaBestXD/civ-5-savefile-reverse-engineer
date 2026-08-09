@@ -190,7 +190,9 @@ class GameType:
 
     @override
     def __str__(self) -> str:
-        return self.key if self.key else "Unknown"
+        if self.hash_value == 0:
+            return "No resource"
+        return "Unknown" if self.key is None else self.key
 
 
 @dataclass(frozen=True, slots=True)
