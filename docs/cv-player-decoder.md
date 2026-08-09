@@ -22,13 +22,17 @@ for player in decoder.iter_players():
             if state.real_count > 0 or state.free_count > 0:
                 print(state.building_type.key)
     for unit in player.units:
-        print(unit.owner_player_index, unit.unit_id, unit.x, unit.y)
+        print(unit.owner_player_index, unit.unit_id, unit.unit_name, unit.x, unit.y)
 ```
 
 `iter_cities()` and `iter_units()` flatten the participant-owned nested
 records. Every returned city and unit carries its `owner_player_index`.
 Each city also provides the saved localization key through `city.name_key`,
 for example `TXT_KEY_CITY_NAME_VENEZ`.
+
+Each unit provides the authoritative serialized database type hash through
+`unit_hash` and its known Lekmod v34.11 `UNIT_*` key through `unit_name`.
+Unknown hashes retain their integer value and use `None` for `unit_name`.
 
 Each player provides its saved multiplayer nickname through
 `player.display_name`. A computer-controlled major civilization uses its

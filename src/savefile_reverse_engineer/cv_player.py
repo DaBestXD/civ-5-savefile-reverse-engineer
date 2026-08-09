@@ -8,6 +8,7 @@ from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
 from ._cv_building_hashes import BUILDING_HASH_NAMES
+from ._cv_unit_hashes import UNIT_HASH_NAMES
 from ._free_list import (
     FREE_LIST_INDEX_MASK,
     read_free_list_header,
@@ -37,6 +38,19 @@ _CITY_DOMAIN_VECTORS = 2
 _MINIMUM_PLAYER_LENGTH = 0x20000
 _INVALID_PLOT_COORD = -0x7FFFFFFF
 _FREE_LIST_SLOT_COUNTS = (8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192)
+_UNIT_ARCHIVE_WORDS_AFTER_PREFIX = 8
+_UNIT_ARCHIVE_WORDS_AFTER_IMMOBILE = 10
+_UNIT_ARCHIVE_WORDS_BEFORE_FLAGS = 93
+_UNIT_ARCHIVE_FLAG_COUNT = 7
+_UNIT_ARCHIVE_ENUM_WORDS = 6
+_UNIT_ARCHIVE_FINAL_WORDS = 6
+_UNIT_SELECTED_PROMOTION_COUNT = 340
+_UNIT_YIELD_COUNT = 7
+_UNIT_ERA_COUNT = 8
+_UNIT_TERRAIN_COUNT = 9
+_UNIT_FEATURE_COUNT = 25
+_UNIT_COMBAT_COUNT = 18
+_UNIT_CLASS_COUNT = 113
 
 
 class CvPlayerDecodeError(ValueError):
@@ -576,12 +590,200 @@ def _find_unit_starts(
                 0 <= _i32(data, candidate + 16) < 512
                 and 0 <= _i32(data, candidate + 20) < 512
             )
+            has_valid_hash = False
             if has_expected_slot and has_valid_prefix:
+                try:
+                    probe = _Reader(data, candidate, player_index)
+                    _ = probe.u32(f"units.entries[{record_index}].version")
+                    for prefix_index in range(6):
+                        _ = probe.i32(
+                            f"units.entries[{record_index}].archive_prefix[{prefix_index}]"
+                        )
+                    unit_hash = _read_unit_hash(
+                        probe,
+                        end=end,
+                        field=f"units.entries[{record_index}]",
+                    )
+                    has_valid_hash = unit_hash != 0
+                except CvPlayerDecodeError:
+                    has_valid_hash = False
+            if has_expected_slot and has_valid_prefix and has_valid_hash:
                 starts.append(candidate)
                 cursor = candidate + 8
                 break
             cursor = candidate + 1
     return tuple(starts)
+
+
+def _ensure_unit_bytes_fit(reader: _Reader, *, end: int, size: int, field: str) -> None:
+    if size > end - reader.offset:
+        reader.fail(
+            f"{field} extends beyond the CvUnit record",
+            field=field,
+        )
+
+
+def _consume_unit_fixed_bytes(
+    reader: _Reader, *, end: int, size: int, field: str
+) -> None:
+    _ensure_unit_bytes_fit(reader, end=end, size=size, field=field)
+    _ = reader.read_bytes(size, field)
+
+
+def _read_unit_bool(reader: _Reader, *, end: int, field: str) -> bool:
+    if reader.offset >= end:
+        reader.fail(
+            f"{field} extends beyond the CvUnit record",
+            field=field,
+        )
+    return reader.read_bool(field)
+
+
+def _consume_unit_string(reader: _Reader, *, end: int, field: str) -> None:
+    _ensure_unit_bytes_fit(reader, end=end, size=4, field=f"{field}.length")
+    length = reader.u32(f"{field}.length")
+    _consume_unit_fixed_bytes(reader, end=end, size=length, field=field)
+
+
+def _consume_unit_vector(
+    reader: _Reader,
+    *,
+    end: int,
+    expected_count: int,
+    item_size: int,
+    field: str,
+) -> None:
+    count_offset = reader.offset
+    _ensure_unit_bytes_fit(reader, end=end, size=4, field=f"{field}.count")
+    count = reader.u32(f"{field}.count")
+    if count != expected_count:
+        reader.fail(
+            f"saved count is {count}, expected {expected_count}",
+            offset=count_offset,
+            field=f"{field}.count",
+        )
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=count * item_size,
+        field=field,
+    )
+    raw_values = reader.data[reader.offset - count * item_size : reader.offset]
+    if item_size == 1:
+        invalid_value = next(
+            (value for value in raw_values if value not in (0, 1)), None
+        )
+        if invalid_value is not None:
+            reader.fail(
+                f"{field} contains Boolean byte {invalid_value}, expected zero or one",
+                offset=count_offset + 4,
+                field=field,
+            )
+
+
+def _read_unit_hash(reader: _Reader, *, end: int, field: str) -> int:
+    """Read the unit hash after the exact Lekmod v34.11 sync archive."""
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=_UNIT_ARCHIVE_WORDS_AFTER_PREFIX * 4,
+        field=f"{field}.archive.scalars_after_prefix",
+    )
+    _ = _read_unit_bool(reader, end=end, field=f"{field}.archive.immobile")
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=_UNIT_ARCHIVE_WORDS_AFTER_IMMOBILE * 4,
+        field=f"{field}.archive.scalars_after_immobile",
+    )
+    _ = _read_unit_bool(
+        reader,
+        end=end,
+        field=f"{field}.archive.fortified_this_turn",
+    )
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=_UNIT_ARCHIVE_WORDS_BEFORE_FLAGS * 4,
+        field=f"{field}.archive.scalars_before_flags",
+    )
+    for index in range(_UNIT_ARCHIVE_FLAG_COUNT):
+        _ = _read_unit_bool(
+            reader,
+            end=end,
+            field=f"{field}.archive.flags[{index}]",
+        )
+    _ensure_unit_bytes_fit(
+        reader, end=end, size=4, field=f"{field}.archive.num_selected_promotions"
+    )
+    _ = reader.i32(f"{field}.archive.num_selected_promotions")
+    _consume_unit_vector(
+        reader,
+        end=end,
+        expected_count=_UNIT_SELECTED_PROMOTION_COUNT,
+        item_size=1,
+        field=f"{field}.archive.selected_promotions",
+    )
+    _ = _read_unit_bool(reader, end=end, field=f"{field}.archive.embarked")
+    _ = _read_unit_bool(
+        reader,
+        end=end,
+        field=f"{field}.archive.ai_turn_processed",
+    )
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=_UNIT_ARCHIVE_ENUM_WORDS * 4,
+        field=f"{field}.archive.enums",
+    )
+    _consume_unit_string(reader, end=end, field=f"{field}.archive.legacy_name")
+    _consume_unit_string(reader, end=end, field=f"{field}.archive.script_data")
+    for name in ("yield_from_kills", "kill_yield_cap"):
+        _consume_unit_vector(
+            reader,
+            end=end,
+            expected_count=_UNIT_YIELD_COUNT,
+            item_size=4,
+            field=f"{field}.archive.{name}",
+        )
+    _consume_unit_vector(
+        reader,
+        end=end,
+        expected_count=_UNIT_ERA_COUNT,
+        item_size=1,
+        field=f"{field}.archive.kill_yield_era_valid",
+    )
+    for name, count in (
+        ("terrain_double_move", _UNIT_TERRAIN_COUNT),
+        ("feature_double_move", _UNIT_FEATURE_COUNT),
+        ("terrain_impassable", _UNIT_TERRAIN_COUNT),
+        ("feature_impassable", _UNIT_FEATURE_COUNT),
+        ("extra_terrain_attack", _UNIT_TERRAIN_COUNT),
+        ("extra_terrain_defense", _UNIT_TERRAIN_COUNT),
+        ("extra_feature_attack", _UNIT_FEATURE_COUNT),
+        ("extra_feature_defense", _UNIT_FEATURE_COUNT),
+        ("extra_unit_combat_modifier", _UNIT_COMBAT_COUNT),
+        ("unit_class_modifier", _UNIT_CLASS_COUNT),
+    ):
+        _consume_unit_vector(
+            reader,
+            end=end,
+            expected_count=count,
+            item_size=4,
+            field=f"{field}.archive.{name}",
+        )
+    _consume_unit_fixed_bytes(
+        reader,
+        end=end,
+        size=_UNIT_ARCHIVE_FINAL_WORDS * 4,
+        field=f"{field}.archive.final_fields",
+    )
+    if 4 > end - reader.offset:
+        reader.fail(
+            "serialized unit hash extends beyond the CvUnit record",
+            field=f"{field}.unit_hash",
+        )
+    return reader.u32(f"{field}.unit_hash")
 
 
 def _read_building_array(reader: _Reader, *, field: str) -> tuple[_HashedIntEntry, ...]:
@@ -772,7 +974,7 @@ def _read_unit(
         )
     _ = reader.i32(f"{field}.archive_prefix_1")
     _ = reader.i32(f"{field}.archive_prefix_2")
-    unit_type_index = reader.i32(f"{field}.unit_type_index")
+    _ = reader.i32(f"{field}.archive_prefix_3")
     x = reader.i32(f"{field}.x")
     y = reader.i32(f"{field}.y")
     unit_id = reader.i32(f"{field}.unit_id")
@@ -781,6 +983,7 @@ def _read_unit(
             f"unit ID {unit_id} does not name free-list slot {slot_index}",
             field=f"{field}.unit_id",
         )
+    unit_hash = _read_unit_hash(reader, end=end, field=field)
     return CvUnit(
         record_index=record_index,
         slot_index=slot_index,
@@ -788,7 +991,8 @@ def _read_unit(
         byte_length=end - start,
         version=version,
         unit_id=unit_id,
-        unit_type_index=unit_type_index,
+        unit_hash=unit_hash,
+        unit_name=UNIT_HASH_NAMES.get(unit_hash),
         x=x,
         y=y,
     )

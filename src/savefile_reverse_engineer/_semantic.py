@@ -217,7 +217,8 @@ def _unit(unit: RawCvUnit, owner_player_index: int) -> CvUnit:
     return CvUnit(
         owner_player_index=owner_player_index,
         unit_id=unit.unit_id,
-        unit_type_index=unit.unit_type_index,
+        unit_hash=unit.unit_hash,
+        unit_name=unit.unit_name,
         x=unit.x,
         y=unit.y,
     )

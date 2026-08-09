@@ -13,7 +13,8 @@ class CvUnit:
     byte_length: int
     version: int
     unit_id: int
-    unit_type_index: int
+    unit_hash: int
+    unit_name: str | None
     x: int
     y: int
 

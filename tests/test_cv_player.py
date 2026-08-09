@@ -128,7 +128,8 @@ def test_decodes_unit_ids_coordinates_and_deleted_slots() -> None:
     units = player.units
 
     assert units[0].unit_id == 57344
-    assert units[0].unit_type_index == 1
+    assert units[0].unit_hash == firaxis_hash("UNIT_WORKER")
+    assert units[0].unit_name == "UNIT_WORKER"
     assert (units[0].x, units[0].y) == (12, 15)
     assert len(units) == 16
     assert {unit.owner_player_index for unit in units} == {0}
@@ -281,7 +282,39 @@ def _synthetic_city_prefix_to_buildings() -> bytes:
     )
 
 
-def _synthetic_player_record(*, has_objects: bool) -> bytes:
+def _synthetic_unit() -> bytes:
+    prefix = _i32_values((9, 0, 0, 1, 3, 4, 8192))
+    archive_tail = b"".join(
+        (
+            _i32_values(tuple(0 for _ in range(8))),
+            bytes((0,)),
+            _i32_values(tuple(0 for _ in range(10))),
+            bytes((0,)),
+            _i32_values(tuple(0 for _ in range(93))),
+            bytes(7),
+            _i32_values((0,)),
+            _bool_vector(tuple(False for _ in range(340))),
+            bytes(2),
+            _i32_values(tuple(0 for _ in range(6))),
+            _utf8(""),
+            _utf8(""),
+            _int_vector(tuple(0 for _ in range(7))),
+            _int_vector(tuple(0 for _ in range(7))),
+            _bool_vector(tuple(False for _ in range(8))),
+            *(
+                _int_vector(tuple(0 for _ in range(count)))
+                for count in (9, 25, 9, 25, 9, 9, 25, 25, 18, 113)
+            ),
+            _i32_values(tuple(0 for _ in range(6))),
+        )
+    )
+    unit_hash = firaxis_hash("UNIT_WORKER").to_bytes(4, "little")
+    return prefix + archive_tail + unit_hash
+
+
+def _synthetic_player_record(
+    *, has_objects: bool, false_unit_prefix: bool = False
+) -> bytes:
     values = (16, 0, 0, *(0 for _ in range(14)))
     record = bytearray(
         b"".join(value.to_bytes(4, "little", signed=True) for value in values)
@@ -292,10 +325,9 @@ def _synthetic_player_record(*, has_objects: bool) -> bytes:
         record.extend(_synthetic_city_buildings())
     record.extend(_free_list_header(live=has_objects))
     if has_objects:
-        unit_values = (9, 0, 0, 1, 3, 4, 8192)
-        record.extend(
-            b"".join(value.to_bytes(4, "little", signed=True) for value in unit_values)
-        )
+        if false_unit_prefix:
+            record.extend(_i32_values((9, 0, 0, 49, 8, 8, 8192)))
+        record.extend(_synthetic_unit())
     record.extend(_free_list_header(live=False))
     record.extend(bytes(0x20000 - len(record)))
     return bytes(record)
@@ -326,6 +358,8 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert zero_entry.production_times_100 is None
     assert zero_entry.real_count is None
     assert players[0].units.entries[0].unit_id == 8192
+    assert players[0].units.entries[0].unit_hash == firaxis_hash("UNIT_WORKER")
+    assert players[0].units.entries[0].unit_name == "UNIT_WORKER"
     assert players[1].cities.entries == ()
 
 
@@ -334,6 +368,30 @@ def test_bytes_only_decoder_rejects_trailing_data(
 ) -> None:
     with pytest.raises(CvPlayerDecodeError, match="no complete 64-player path"):
         _ = tuple(decode_player_array_bytes(synthetic_player_array + b"extra"))
+
+
+def test_unit_archive_rejects_false_prefix_marker() -> None:
+    player_array = _synthetic_player_record(
+        has_objects=True, false_unit_prefix=True
+    ) + (_synthetic_player_record(has_objects=False) * 63)
+
+    unit = next(decode_player_array_bytes(player_array)).units.entries[0]
+
+    assert (unit.x, unit.y) == (3, 4)
+    assert unit.unit_name == "UNIT_WORKER"
+
+
+def test_unit_preserves_unknown_serialized_hash(
+    synthetic_player_array: bytes,
+) -> None:
+    known_hash = firaxis_hash("UNIT_WORKER").to_bytes(4, "little")
+    unknown_hash = _UNKNOWN_BUILDING_HASH.to_bytes(4, "little")
+    changed = synthetic_player_array.replace(known_hash, unknown_hash, 1)
+
+    unit = next(decode_player_array_bytes(changed)).units.entries[0]
+
+    assert unit.unit_hash == _UNKNOWN_BUILDING_HASH
+    assert unit.unit_name is None
 
 
 def _building_array_starts(data: bytes | bytearray) -> tuple[int, ...]:

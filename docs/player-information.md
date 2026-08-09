@@ -162,9 +162,16 @@ archive values are:
 | `+0x14` | Y |
 | `+0x18` | Unit ID |
 
-The record continues with movement, combat, promotions, missions, transport,
-and other state. Those bytes are included in `CvUnit.byte_length` but are not
-yet exposed.
+The sync archive continues with movement, combat, promotion, type-catalogue,
+and AI state. Its vectors and strings make its serialized length variable. A
+four-byte unit `Type` hash follows the complete sync archive. The current
+Lekmod v34.11 fixtures place that hash at `+0x817` for ordinary records, but
+the decoder calculates its position from the archive structure rather than
+assuming a fixed offset.
+
+The record continues after the hash with promotions, missions, transport, and
+other state. Those bytes are included in `CvUnit.byte_length` but are not yet
+exposed.
 
 ## Turn 76 validation values
 
@@ -177,7 +184,8 @@ For `AutoSave_Post_0076 AD-0040.Civ5Save`:
 - Those cities are at `(11, 16)`, `(16, 14)`, `(7, 20)`, and `(6, 26)` with
   populations 16, 9, 10, and 9.
 - Its unit list has 16 live entries and one deleted slot, slot 14.
-- Its first unit has ID 57344, runtime type index 1, and coordinate `(12, 15)`.
+- Its first unit has ID 57344, serialized type `UNIT_WORKER`, and coordinate
+  `(12, 15)`.
 - Its second city has real libraries and granaries with count 1.
 - Its capital has 7,081 hundredths of production stored toward the Great
   Lighthouse.
