@@ -8,6 +8,8 @@ tuples may be empty. The decoder does not infer alive status.
 from savefile_reverse_engineer import Civ5SaveDecoder
 
 decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
+print(decoder.player_display_names[0])
+
 for player in decoder.iter_players():
     print(
         player.player_index,
@@ -29,6 +31,11 @@ for player in decoder.iter_players():
 records. Every returned city and unit carries its `owner_player_index`.
 Each city also provides the saved localization key through `city.name_key`,
 for example `TXT_KEY_CITY_NAME_VENEZ`.
+
+`player_display_names` is a cached, read-only mapping from every participating
+player index to the same resolved `display_name` exposed by `iter_players()`.
+Its values can be `None` when the save does not contain enough information to
+resolve a display name.
 
 Each unit provides the authoritative serialized database type hash through
 `unit_hash` and its known Lekmod v34.11 `UNIT_*` key through `unit_name`.

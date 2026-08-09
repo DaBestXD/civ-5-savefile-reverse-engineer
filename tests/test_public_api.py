@@ -121,12 +121,19 @@ def test_city_and_unit_iterators_preserve_semantic_ownership() -> None:
 
 
 def test_player_iterator_includes_saved_display_names() -> None:
-    players = tuple(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    decoder = Civ5SaveDecoder(_SAVE_PATH)
+    players = tuple(decoder.iter_players())
 
     assert players[0].display_name == "Brad, From Algebra"
     assert players[0].player_type is PlayerType.PLAYER
     assert players[3].display_name == "TXT_KEY_CITYSTATE_MEXICO"
     assert players[3].player_type is PlayerType.CITY_STATE
+    assert decoder.player_display_names is decoder.player_display_names
+    assert decoder.player_display_names[0] == "Brad, From Algebra"
+    assert decoder.player_display_names[22] == "TXT_KEY_CITYSTATE_MEXICO"
+    assert set(decoder.player_display_names) == {
+        player.player_index for player in players
+    }
 
 
 @pytest.mark.skipif(
@@ -134,10 +141,8 @@ def test_player_iterator_includes_saved_display_names() -> None:
     reason="the local single-player Lekmod save is unavailable",
 )
 def test_computer_display_names_use_leader_or_city_name_keys() -> None:
-    players = {
-        player.player_index: player
-        for player in Civ5SaveDecoder(_SINGLE_PLAYER_PATH).iter_players()
-    }
+    decoder = Civ5SaveDecoder(_SINGLE_PLAYER_PATH)
+    players = {player.player_index: player for player in decoder.iter_players()}
 
     assert players[1].display_name == "LEADER_MACEDON"
     assert players[1].player_type is PlayerType.COMPUTER
@@ -146,3 +151,5 @@ def test_computer_display_names_use_leader_or_city_name_keys() -> None:
     assert players[32].display_name == "TXT_KEY_CITYSTATE_GENEVA"
     assert players[63].display_name == "LEADER_BARBARIAN"
     assert players[63].player_type is PlayerType.BARBARIAN
+    assert decoder.player_display_names[22] == "TXT_KEY_CITYSTATE_KYRENE"
+    assert decoder.player_display_names[63] == "LEADER_BARBARIAN"

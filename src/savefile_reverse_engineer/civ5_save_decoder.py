@@ -1,9 +1,10 @@
 """Public interface for decoding supported Civilization V save files."""
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
+from types import MappingProxyType
 from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
@@ -320,6 +321,7 @@ class Civ5SaveDecoder:
     __slots__: tuple[str, ...] = (
         "_header_cache",
         "_payload_cache",
+        "_player_display_names_cache",
         "_player_location_cache",
         "_player_slots_cache",
         "_plot_location_cache",
@@ -335,6 +337,7 @@ class Civ5SaveDecoder:
     _summary_cache: SaveSummary | None
     _settings_cache: GameSettings | None
     _player_slots_cache: tuple[PlayerSlot, ...] | None
+    _player_display_names_cache: Mapping[int, str | None] | None
     _plot_location_cache: _CvPlotLocation | None
     _player_location_cache: _CvPlayerLocation | None
     _team_location_cache: _CvTeamLocation | None
@@ -346,6 +349,7 @@ class Civ5SaveDecoder:
         self._summary_cache = None
         self._settings_cache = None
         self._player_slots_cache = None
+        self._player_display_names_cache = None
         self._plot_location_cache = None
         self._player_location_cache = None
         self._team_location_cache = None
@@ -484,6 +488,20 @@ class Civ5SaveDecoder:
             for player in self._iter_raw_players()
             if player.player_index in participant_slots
         )
+
+    @property
+    def player_display_names(self) -> Mapping[int, str | None]:
+        """Map each participating player index to its resolved display name."""
+        names = self._player_display_names_cache
+        if names is None:
+            names = MappingProxyType(
+                {
+                    player.player_index: player.display_name
+                    for player in self.iter_players()
+                }
+            )
+            self._player_display_names_cache = names
+        return names
 
     def iter_cities(self) -> Iterator[CvCity]:
         """Return a fresh lazy iterator over participant-owned cities."""
