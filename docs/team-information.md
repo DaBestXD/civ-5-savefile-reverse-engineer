@@ -1,9 +1,9 @@
 <!-- markdownlint-disable -->
-# CvTeam Information
+# `CvTeam` byte layout
 
 This document describes the `CvTeam` objects found in the examined Lekmod
 v34.11 saves. It describes the bytes that are actually present in those saves.
-For the public Python API, see the [CvTeam array decoder](cv-team-decoder.md).
+For the public Python API, see the [`CvTeam` decoder guide](cv-team-decoder.md).
 
 Each save contains 64 consecutive `CvTeam` objects immediately after `CvMap`.
 Each examined object is `0x3424` bytes.

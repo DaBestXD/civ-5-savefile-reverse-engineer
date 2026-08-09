@@ -1,17 +1,16 @@
-# Civilization V save-file byte layout
+# Civilization V save-file and payload layout
 
-This document records the byte layout confirmed from the available save files and
-source code. It separates the physical `.CIV5SAVE` file from the decompressed
-payload stored inside it.
+This document gives the top-level layout of the examined save files. Detailed
+record layouts have one canonical home and are linked from each section.
 
-The multiplayer evidence comes from 54 sequential Lekmod saves in
-`test-save-file/multi-player`. Their headers identify the game as
-`RacismLEKMOD v34.11`, running Civilization V build `1.0.3.279 (403694)` with
-Lekmap v5.2. The single-player comparison is
-`test-save-file/single-player/before_state.Civ5Save`.
+The main evidence is 54 sequential Lekmod v34.11 multiplayer saves and one
+single-player comparison save. The multiplayer headers identify Civilization V
+build `1.0.3.279 (403694)`, Lekmap v5.2, and the game name
+`RacismLEKMOD v34.11`.
 
-All integer values described here are little-endian unless stated otherwise.
-Offsets written as `+0xNN` are relative to the start of the containing record.
+All confirmed integers are little-endian. Offsets written as `+0xNN` are
+relative to the containing record. Other offsets are relative to the start of
+the physical file or decompressed payload, as stated.
 
 ## Type notation
 
@@ -25,88 +24,38 @@ Offsets written as `+0xNN` are relative to the start of the containing record.
 | `i32` | 4 bytes | Signed 32-bit integer |
 | `IDInfo` | 8 bytes | Two `i32` values: owner and object ID |
 
-## Complete `.CIV5SAVE` file
+## Physical file
 
-The physical save contains an uncompressed header followed by a chunked zlib
-stream. The header length is variable.
+A `.CIV5SAVE` file contains a variable-length uncompressed header followed by
+a chunked zlib stream:
 
 ```text
-physical file offset 0
-├─ uncompressed Civilization V save header
-│  ├─ "CIV5" magic
-│  ├─ outer save version
-│  ├─ game build and mod information
-│  ├─ player and game setup strings
-│  └─ other variable header data
+physical offset 0
+├─ uncompressed save header
 └─ compressed payload chunks
-   ├─ u32 compressed_chunk_length
-   ├─ u8 compressed_chunk[compressed_chunk_length]
-   ├─ u32 compressed_chunk_length
-   ├─ u8 compressed_chunk[compressed_chunk_length]
-   └─ repeat to physical end of file
+   ├─ u32 chunk length
+   ├─ u8 chunk body[chunk length]
+   └─ repeated to physical EOF
 ```
 
-### Confirmed header information
+The header must be parsed in serialization order because variable-length
+strings and arrays make the first zlib offset variable. See the
+[physical header format](civ5-header-format.md) for the header fields, supported
+versions, and boundary validation.
 
-For outer version 8 and build 403694, the quick-reference fields, version-3
-slot hints, and version-6 `CvPreGame` archive can be parsed in serialization
-order. A short bridge inside the quick header remains preserved as raw,
-offset-tagged fields because its meanings are not confirmed. The following
-values are confirmed in every multiplayer save:
+### Compressed chunks
 
-| Field | Value |
-|---|---|
-| Magic | `CIV5` |
-| Outer save version | `8` |
-| Game version | `1.0.3.279 (403694)` |
-| Build | `403694 FINAL_RELEASE` |
-| Mod identifier | `RacismLEKMOD v34.11` |
-| Map script | `Assets\\Maps\\Lekmap v5.2\\LekmapPangaeaFractalv5.2.lua` |
-| World size | `WORLDSIZE_TINY` |
-| Game speed | `GAMESPEED_QUICK` |
-| Handicap | `HANDICAP_IMMORTAL` |
+Each physical chunk contains a four-byte length followed by that many body
+bytes. Most non-final bodies are `0x10000` bytes; the final body is shorter.
+The examined multiplayer saves contain 10 to 14 chunks, and the single-player
+comparison contains 11.
 
-The first zlib byte is `78 9C`. In the multiplayer dataset, its physical offset
-is between `0x2A0E` and `0x2A85`. In the single-player comparison, it is at
-`0x2820`.
-
-The first chunk-length word is four bytes before the zlib header:
+The length words are container metadata, not part of the zlib stream. A
+decompressor must join only the chunk bodies and pass the combined bytes to one
+zlib decompressor:
 
 ```text
-first_chunk_length_offset = zlib_header_offset - 4
-```
-
-The physical-header decoder derives this offset by consuming the supported
-header structures. It does not search for zlib bytes. It then validates every
-length-prefixed compressed chunk through physical EOF.
-
-### Compressed chunk layout
-
-Each chunk has this physical layout:
-
-| Relative offset | Type | Meaning |
-|---:|---|---|
-| `+0x00` | `u32` | Compressed chunk-body length |
-| `+0x04` | `u8[length]` | Compressed chunk body |
-
-Most non-final chunk bodies are `0x10000` bytes. The final chunk is shorter.
-There are 10 to 14 chunks in the multiplayer saves and 11 in the single-player
-save.
-
-The four-byte length words are container data. They are not part of the deflate
-stream. A decoder must:
-
-1. Start at `zlib_header_offset - 4`.
-2. Read a `u32` chunk length.
-3. Copy only that chunk body.
-4. Repeat until the physical end of the file.
-5. Concatenate the copied bodies in order.
-6. Pass the combined bytes to one zlib decompressor.
-
-Conceptual pseudocode:
-
-```text
-position = zlib_header_offset - 4
+position = first_zlib_offset - 4
 compressed_stream = empty bytes
 
 while position < physical_file_size:
@@ -118,20 +67,17 @@ while position < physical_file_size:
 payload = zlib_decompress(compressed_stream)
 ```
 
-The decompressor can report `eof = false` even after all output is recovered.
-Civilization V appears to store a flushed stream without the conventional zlib
-end marker. Valid streams have no unused input and no unconsumed input.
+The examined streams may omit the conventional zlib end marker. A valid saved
+stream can therefore report `eof = false` after producing all output, but it
+must have no unused or unconsumed input.
 
-Passing the complete physical tail directly to zlib incorrectly injects later
-chunk-length words into the deflate stream. That mistake caused the former false
-corruption report at decompressed offset `0x316B4F`.
+Passing the complete physical tail directly to zlib injects later chunk-length
+words into the stream. This caused an earlier false corruption report at
+decompressed offset `0x316B4F`.
 
 ## Decompressed payload
 
-All offsets in this section are relative to the start of the decompressed
-payload, not the physical save file.
-
-The currently confirmed top-level order is:
+Offsets in this section are relative to decompressed offset zero.
 
 ```text
 decompressed offset 0
@@ -139,27 +85,29 @@ decompressed offset 0
 ├─ u32 embedded SQLite length
 ├─ embedded SQLite database
 ├─ CvMap
-│  ├─ fixed header and resource arrays
-│  ├─ CvPlot[map width × map height]
+│  ├─ map header and resource arrays
+│  ├─ CvPlot[width × height]
 │  ├─ CvArea free-list
 │  ├─ CvLandmass free-list
 │  └─ i32 AI map hints
 ├─ CvTeam[64]
-├─ CvPlayer[0]
-└─ remaining variable player, AI, diplomacy, treasury, city, unit,
-   and other game objects
+├─ CvPlayer[64]
+│  ├─ player and AI fields
+│  ├─ CvCityAI free-list
+│  ├─ CvUnit free-list
+│  ├─ CvArmyAI free-list
+│  └─ remaining player fields
+└─ remaining top-level game objects
 ```
 
-The exact continuous layout is known through all 64 `CvTeam` records. The
-`CvPlayer` prefix is partly decoded, but the complete variable player record and
-the records after it are not yet bounded.
+The layout is continuously known through all 64 team records. All 64 player
+records and their three object free lists can also be bounded, although many
+fields within those ranges are not decoded.
 
 ### `CvGame`
 
-`CvGame` begins at decompressed offset zero. Its complete serialized length is
-variable.
-
-Confirmed fields:
+`CvGame` begins at offset zero and has a variable serialized length. These
+fields are confirmed:
 
 | Offset | Type | Meaning | Observed value or rule |
 |---:|---|---|---|
@@ -172,7 +120,7 @@ Confirmed fields:
 | `+0x28` | `i32` | Total city count | Changes over time |
 | `+0x2C` | `i32` | Total population | Changes over time |
 
-Selected validation values:
+Selected fixture values are:
 
 | Save | Elapsed turn | Cities | Population |
 |---|---:|---:|---:|
@@ -185,8 +133,9 @@ Selected validation values:
 | Post turn 70 | 70 | 19 | 140 |
 | Post turn 76 | 76 | 19 | 143 |
 
-The embedded SQLite signature is the reliable anchor for locating the end of the
-variable game-level section.
+The embedded SQLite signature is the reliable anchor for the end of the
+variable game-level section. Raw byte differences before that anchor must not
+be assigned field names until the preceding source-order structures are known.
 
 ### Embedded SQLite database
 
@@ -198,7 +147,7 @@ u8 sqlite_database[0xC00]
 CvMap
 ```
 
-Anchor formulas:
+Useful anchor formulas are:
 
 ```text
 sqlite_length_offset = sqlite_signature_offset - 4
@@ -206,348 +155,54 @@ CvMap_offset          = sqlite_signature_offset + 0xC00
 first_plot_offset     = CvMap_offset + 0x3CA
 ```
 
-The database is identical in every examined save:
+The database is identical in the examined saves:
 
 | Property | Value |
 |---|---|
-| Length | `3072` bytes, `0xC00` |
+| Length | `3072` bytes (`0xC00`) |
 | SHA-256 | `1b36fbd3619715451a12ee39ca42b0588ff9f749ec9e1a784dd7cc206c685912` |
 | Page size | `1024` |
 | Page count | `3` |
 | Integrity check | `ok` |
 | Table | `SimpleValues(Name TEXT Primary Key, Value VARIANT)` |
-| Table rows | `0` |
+| Rows | `0` |
 
-### `CvMap`
+### `CvMap` and `CvPlot`
 
-The multiplayer maps are `48 × 42`, giving 2,016 serialized plots.
+`CvMap` contains the map dimensions, two hashed resource arrays, a variable
+`CvPlot` record for every tile, two object free lists, and the AI map-hints
+value. Plot records must be parsed in sequence because their build-progress and
+unit-reference sections are variable.
 
-#### Fixed map header
-
-| Offset | Type | Meaning | Multiplayer value |
-|---:|---|---|---:|
-| `+0x00` | `u32` | Version | `1` |
-| `+0x04` | `i32` | Width | `48` |
-| `+0x08` | `i32` | Height | `42` |
-| `+0x0C` | `i32` | Land-plot count | `760` |
-| `+0x10` | `i32` | Owned-plot count | Variable |
-| `+0x14` | `i32` | Natural-wonder count | `3` |
-| `+0x18` | `i32` | Top latitude | `90` |
-| `+0x1C` | `i32` | Bottom latitude | `-90` |
-| `+0x20` | `bool` | Wrap X | `1` |
-| `+0x21` | `bool` | Wrap Y | `0` |
-| `+0x22` | 16 bytes | Map GUID | Changes at the resync |
-| `+0x32` | variable | Total-resource hashed array | `0x1CC` bytes |
-| `+0x1FE` | variable | Land-resource hashed array | `0x1CC` bytes |
-| `+0x3CA` | `CvPlot` | First plot | Version `7` |
-
-Each resource array has this structure:
-
-```text
-u32 entry_count = 57
-repeat 57 times:
-    u32 type_hash
-    i32 value
-```
-
-All 57 hashes are nonzero in both arrays. Each complete array is `0x1CC`
-bytes.
-
-#### `CvPlot` array
-
-Plots are serialized in row-major coordinate order:
-
-```text
-x = plot_index % map_width
-y = plot_index // map_width
-```
-
-All 108,864 multiplayer plot instances were checked, and every coordinate
-matched this rule.
-
-`CvPlot` is a variable-length record. Its minimum confirmed length in Lekmod
-v34.11 is `0x625` bytes. Lekmod v34.11 commit
-`f4b96af9200470ab8fe50dee3dad0dce89c16975` contains the modified version 7
-reader and writer. The following compact layout matches the examined saves.
-
-| Offset | Type | Meaning |
-|---:|---|---|
-| `+0x00` | `u32` | Plot serialization version, `7` |
-| `+0x04` | `i16` | X coordinate |
-| `+0x06` | `i16` | Y coordinate |
-| `+0x2B..+0x38` | `bool[14]` | Plot flags, including Lekmod additions at `+0x33` and `+0x38` |
-| `+0x33` | `bool` | Route was previously pillaged |
-| `+0x38` | `bool` | Forced fresh water |
-| `+0x39` | `i8` | Owner player ID; `-1` means no owner |
-| `+0x3A` | `i8` | Plot type |
-| `+0x3B` | `i8` | Terrain type |
-| `+0x3C` | `u32` hash | Feature type |
-| `+0x40` | `u32` hash | Resource type |
-| `+0x44` | `u32` hash | Current improvement type |
-| `+0x48` | `u32` hash | Under-construction improvement type |
-| `+0x4C..+0x4F` | `i8[4]` | Improvement/route/camp player fields |
-| `+0x50` | `i8` | Route type |
-| `+0x51` | `i8` | World anchor |
-| `+0x52` | `i8` | Anchor data |
-| `+0x53` | `i8` | East-edge river-flow direction |
-| `+0x54` | `i8` | Southeast-edge river-flow direction |
-| `+0x55` | `i8` | Southwest-edge river-flow direction |
-| `+0x56` | `IDInfo` | Plot city: owner and city ID |
-| `+0x5E` | `IDInfo` | Working-city or city-catchment assignment |
-| `+0x66` | `IDInfo` | Working-city override |
-| `+0x6E` | `IDInfo` | Resource-linked city |
-| `+0x76` | `IDInfo` | Purchase city |
-| `+0x7E` | `i16[7]` | Food, production, gold, science, culture, faith, Golden Age Points |
-| `+0x08C` | `i32[80]` | Found values by player |
-| `+0x1CC` | `i8[80]` | City-radius counts by player |
-| `+0x21C` | `i16[80]` | Visibility counts by team |
-| `+0x2BC` | `i8[80]` | Revealed owners by team |
-| `+0x30C` | `i8` | River-crossing byte |
-| `+0x30D` | `u32[4]` | Revealed bits |
-| `+0x31D` | `bool[80]` | Forced resource reveals |
-| `+0x36D` | `u32 hash[80]` | Revealed improvements |
-| `+0x4AD` | `i16[80]` | Revealed routes |
-| `+0x54D` | `bool[22]` | No-settling flags |
-| `+0x563` | `bool` | Has script data |
-| `+0x564` | `i32` | Outer build-progress count when script data is absent |
-
-Feature, resource, improvement, under-construction improvement, revealed
-improvement, and build type hashes use Firaxis CRC32 over the ASCII `Type`
-string:
-
-```python
-hash_value = (~zlib.crc32(type_name.encode("ascii"))) & 0xffffffff
-```
-
-For example, `IMPROVEMENT_FARM` is `0x0A0929B1` and is stored little-endian as
-`B1 29 09 0A`. Zero means no type. Build a reverse hash lookup from the exact
-effective game and mod database. See
-[Map Information](map-information.md#source-references) for commit-pinned
-Lekmod source references.
-
-No examined plot has script data.
-
-When the build-progress count is zero, the fixed tail continues as follows:
-
-| Offset | Type | Meaning |
-|---:|---|---|
-| `+0x568` | `i16[80]` | Invisible-visibility values |
-| `+0x608` | `u32` | Plot unit-reference count |
-| variable | `IDInfo[count]` | Owner and ID for each unit on the plot |
-| variable | `i8` | Continent |
-| variable | 24 bytes | `CvArchaeologyData`, version `2` |
-
-When build progress is present, the observed structure has outer count `70`,
-inner count `70`, 68 nonzero hashes, and two zero hashes. It adds exactly
-`0x1A4` bytes. Entries are interleaved: each 4-byte build hash is immediately
-followed by a 2-byte progress value only when the hash is nonzero.
-
-```text
-4 + (68 × (4 + 2)) + (2 × 4) = 420 bytes = 0x1A4
-```
-
-Each unit reference adds eight bytes. The highest observed unit-reference count
-is four.
-
-| Plot length | Meaning |
-|---:|---|
-| `0x625` | Base record |
-| `0x62D` | Base plus one unit |
-| `0x635` | Base plus two units |
-| `0x63D` | Base plus three units |
-| `0x645` | Base plus four units |
-| `0x7C9` | Build progress |
-| `0x7D1` | Build progress plus one unit |
-| `0x7D9` | Build progress plus two units |
-
-There is no unknown four-byte plot extension. The four bytes missing from an
-earlier size calculation are the serialized `m_uiTradeRouteBitFlags` field in
-the fixed plot prefix.
-
-Because plot records are variable, a decoder must parse each plot in sequence.
-It must not calculate a later plot from a fixed record size.
-
-#### `CvArea` free-list
-
-The area free-list starts immediately after the final plot. It always occupies
-`0x34BCA` bytes in the multiplayer dataset.
-
-Free-list metadata is `0x118` bytes:
-
-| Field | Value |
-|---|---:|
-| Number of slots | `64` |
-| Last index | `44` |
-| Free-list head | `-1` |
-| Free-list count | `0` |
-| Live-object count | `45` |
-
-There are 45 live `CvArea` objects. Each is 4,794 bytes, or `0x12BA`:
-
-```text
-u32 version = 1
-10 × i32 area counters
-4 × i32 boundaries
-2 × bool flags
-5 × i32[80] player or team arrays
-64 × IDInfo
-64 × i32[7] yield modifiers
-hashed resource array:
-    count = 57
-    57 nonzero hash/value entries
-hashed improvement array:
-    count = 46
-    45 nonzero hash/value entries
-    1 zero hash
-```
-
-#### `CvLandmass` free-list
-
-The landmass free-list follows the area free-list. It always occupies `0x2A8`
-bytes in the multiplayer dataset.
-
-Its metadata is `0x98` bytes:
-
-| Field | Value |
-|---|---:|
-| Number of slots | `32` |
-| Last index | `23` |
-| Free-list head | `-1` |
-| Free-list count | `0` |
-| Live-object count | `24` |
-
-Each of the 24 live landmass objects is 22 bytes, or `0x16`:
-
-| Relative field order | Type | Meaning |
-|---:|---|---|
-| 1 | `u32` | Version |
-| 2 | `i32` | ID |
-| 3 | `i32` | Tile count |
-| 4 | `i32` | Centroid X total |
-| 5 | `i32` | Centroid Y total |
-| 6 | `bool` | Water |
-| 7 | `i8` | Continent type |
-
-#### End of `CvMap`
-
-The landmass list is followed by one `i32` AI-map-hints value. It is zero in all
-examined saves.
-
-```text
-CvMap_end = final_plot_end
-          + 0x34BCA  CvArea free-list
-          + 0x002A8  CvLandmass free-list
-          + 0x00004  AI map hints
-          = final_plot_end + 0x34E76
-```
+See [`CvMap` and `CvPlot` byte layout](map-information.md) for confirmed fields,
+enum values, hash rules, version differences, and source references. See the
+[`CvPlot` API guide](cv-plot-decoder.md) for public result types and errors.
 
 ### `CvTeam[64]`
 
-Exactly 64 consecutive serialized `CvTeam` objects follow `CvMap`. This is a
-useful array model for decoding, but these are serialized C++ objects rather
-than copies of their in-memory structs.
+Exactly 64 `CvTeam` records follow `CvMap`. Each record is `0x3424` bytes in
+the examined v34.11 saves, but database catalogue counts and optional vectors
+can change that length in another layout.
 
-Each team record is exactly `0x3424` bytes in all examined Lekmod v34.11
-multiplayer saves, including inactive team slots:
+See the [`CvTeam` byte layout](team-information.md) and
+[`CvTeam` API guide](cv-team-decoder.md).
 
-```text
-CvTeam[i]   = CvMap_end + (i × 0x3424)
-CvPlayer[0] = CvMap_end + (64 × 0x3424)
-            = CvMap_end + 0xD0900
-```
+### `CvPlayer[64]`
 
-This fixed size is proven for this Lekmod v34.11 dataset. It must not be assumed
-for vanilla Civilization V or another mod version without validation.
+Exactly 64 variable-length `CvPlayerAI` records follow the teams. The decoder
+bounds each player by validating its version prefix and the city, unit, and
+army free lists. It exposes confirmed player fields, live cities, live units,
+and city building inventories.
 
-Confirmed team fields:
+See the [`CvPlayer`, `CvCity`, and `CvUnit` byte layout](player-information.md)
+and [`CvPlayer` API guide](cv-player-decoder.md).
 
-| Offset | Type | Meaning |
-|---:|---|---|
-| `+0x00` | `u32` | Team serialization version, `1` |
-| `+0x10` | `i32` | City count |
-| `+0x14` | `i32` | Population |
-| `+0x18` | `i32` | Land |
-| `+0x78` | `bool[8]` | Eight team flags begin here |
-| `+0x84` | `i32` | Team ID |
-| `+0x88` | `i32` | Current era |
-| `+0x1E0C` | variable | `CvTeamTechs` begins |
+## Selected validation offsets
 
-#### `CvTeamTechs`
+These decompressed offsets are fixture evidence and useful regression values.
+They are not fixed offsets for other saves.
 
-Known order relative to the containing `CvTeam`:
-
-```text
-+0x1E0C  u32 version
-+0x1E10  i32 last_technology
-+0x1E14  i32 technology_count = 81
-         u32 technology_hash[81]
-         bool has_technology[81]
-         bool no_trade_technology[81]
-         bool has_technology_by_human[81]
-         bool has_technology_for_league[81]
-+0x20A0  i32 research_progress[81]
-         technology-count data
-```
-
-Research progress is stored in hundredths. Lekmod serializes four 81-byte
-Boolean arrays here. Assuming the two arrays used by an unmodified layout makes
-the following fields appear 162 bytes too early.
-
-The preceding hash vector must be used to identify technologies. Runtime XML
-indices must not be assumed to be stable.
-
-### `CvPlayer`
-
-The exact start of `CvPlayer[0]` follows from the fixed team array. The complete
-player record is variable-length and has not yet been structurally bounded.
-
-Confirmed prefix fields for Player 0:
-
-| Offset | Type | Meaning |
-|---:|---|---|
-| `+0x00` | `u32` | Player serialization version, `16` |
-| `+0x04` | `i32` | Starting X; observed Player 0 value `11` |
-| `+0x08` | `i32` | Starting Y; observed Player 0 value `16` |
-| `+0x0C` | `i32` | Population |
-| `+0x10` | `i32` | Land |
-| `+0x14` | `i32` | Scored land |
-| `+0x24` | `i32` | Current culture, multiplied by 100 |
-| `+0x28` | `i32` | Lifetime culture, multiplied by 100 |
-| `+0x38` | `i32` | Current faith |
-| `+0x3C` | `i32` | Lifetime faith |
-
-Player 0 population and land match Team 0 throughout the sequential saves.
-
-Later player starts can currently be detected with an alignment-aware candidate
-signature:
-
-```text
-u32 version = 16
-i32 starting_x
-i32 starting_y
-i32 team_population
-i32 team_land
-i32 scored_land
-```
-
-This is a useful validation method, but it does not replace parsing the complete
-preceding player record.
-
-Map plots provide additional player-related information before the complete
-player layout is known:
-
-- Plot city `IDInfo` gives a city owner, city ID, and map coordinate.
-- Plot unit references give unit owners, unit IDs, and map coordinates.
-- Plot unit references do not identify unit types.
-- A plot's working-city field assigns the plot to a city catchment. Actual
-  worked citizens are stored in `CvCityCitizens`.
-
-### Selected decompressed validation offsets
-
-These offsets can be used as regression tests. `CvTeam[0]` begins at `CvMap`
-end.
-
-| Save | `CvMap` start | First plot | Final plot end | `CvMap` end / Team 0 | Player 0 |
+| Save | `CvMap` | First plot | Final plot end | Team 0 | Player 0 |
 |---|---:|---:|---:|---:|---:|
 | Initial turn 0 | `0x30C7` | `0x3491` | `0x309841` | `0x33E6B7` | `0x40EFB7` |
 | Post turn 0 | `0x33F6` | `0x37C0` | `0x309B38` | `0x33E9AE` | `0x40F2AE` |
@@ -559,40 +214,33 @@ end.
 | Post turn 70 | `0x7B5B` | `0x7F25` | `0x31DE6D` | `0x352CE3` | `0x4235E3` |
 | Post turn 76 | `0x7F95` | `0x835F` | `0x31F9C7` | `0x35483D` | `0x42513D` |
 
-### Known and unknown coverage
+## Known limits
 
-For the multiplayer payloads:
+For the examined multiplayer payloads, the continuous source-order layout
+through `CvMap` covers about 22% to 24% of the payload. Extending through all
+64 teams covers about 28% to 30%. The following 64 player records have known
+outer and free-list boundaries but not complete source-order field mappings.
 
-- The exact continuous layout through `CvMap` covers about 22% to 24%.
-- The exact continuous layout through all 64 teams covers about 28% to 30%.
-- Approximately 70% to 72% remains without continuous byte boundaries.
+The following regions still need complete source-order decoding:
 
-The beginning of `CvPlayer` is partly decoded. The following later structures
-still need reliable byte boundaries and conditional-length rules:
+- most fields inside each bounded `CvPlayer` record
+- most player AI objects, diplomacy state, and `CvTreasury`
+- city citizens and fields after the confirmed city prefix
+- building yield changes and Great Work assignments
+- unit promotions, missions, and fields after the confirmed unit prefix
+- `CvArmyAI` entries
+- later top-level objects near the end of the payload
 
-- The remainder of each `CvPlayer` record
-- Most player AI subobjects
-- Diplomacy state
-- `CvTreasury`
-- City free-lists and complete `CvCity` records
-- Unit free-lists and complete `CvUnit` records
-- Later top-level objects near the end of the payload
+`CvTreasury::Write` is known from source to write version `1` followed by 12
+`i32` fields, with gold first. Its absolute offset is not confirmed because it
+follows variable player and AI objects.
 
-The source describes `CvTreasury::Write` as version `1` followed by 12 `i32`
-fields, with gold first. Its absolute offset is not yet known because it follows
-several variable-length AI objects. Raw byte differences must not be labelled as
-gold or another field until the preceding structures are parsed.
-
-### Decoder cautions
+## Decoder cautions
 
 - Remove every physical chunk-length prefix before zlib decompression.
-- Parse plots sequentially because their build-progress and unit-reference tails
-  are variable.
-- Use serialized hashes to identify XML-backed types. Do not rely on runtime row
-  indices.
-- Treat the Resync save as another snapshot of turn 64, not turn 65.
-- Treat the standalone turn-70 autosave and Post turn 70 as distinct snapshots.
-- A resync can regenerate map GUIDs and landmass IDs without changing the logical
-  game turn.
-- Do not apply the observed Lekmod team size to another game or mod version
-  without testing it.
+- Parse plots sequentially; do not assume a fixed record size.
+- Use serialized hashes for XML-backed types instead of runtime row indexes.
+- Treat the resync save as another turn-64 snapshot, not turn 65.
+- Treat the standalone turn-70 autosave and Post turn 70 as separate snapshots.
+- Do not apply observed Lekmod record sizes to another game or mod version
+  without representative saves and regression tests.

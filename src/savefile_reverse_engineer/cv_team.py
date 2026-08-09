@@ -577,3 +577,11 @@ def iterate_cv_teams_from_payload(
     reader = _Reader(payload, byte_offset)
     for team_index in range(_TEAM_COUNT):
         yield _read_team(reader, team_index)
+
+
+def locate_cv_team_array_end(payload: bytes, *, byte_offset: int) -> int:
+    """Return the first byte after the 64 structurally decoded teams."""
+    reader = _Reader(payload, byte_offset)
+    for team_index in range(_TEAM_COUNT):
+        _ = _read_team(reader, team_index)
+    return reader.offset

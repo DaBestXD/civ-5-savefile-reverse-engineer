@@ -14,6 +14,19 @@ The supported files use:
 Other versions may use different fields or field widths. The decoder rejects
 them until their layouts are confirmed with real saves and matching source.
 
+The examined multiplayer saves contain these values. They are fixture evidence,
+not required values for every supported save:
+
+| Field | Examined value |
+|---|---|
+| Game version | `1.0.3.279 (403694)` |
+| Build string | `403694 FINAL_RELEASE` |
+| Pregame game name | `RacismLEKMOD v34.11` |
+| Map script | `Assets\\Maps\\Lekmap v5.2\\LekmapPangaeaFractalv5.2.lua` |
+| World size | `WORLDSIZE_TINY` |
+| Game speed | `GAMESPEED_QUICK` |
+| Handicap | `HANDICAP_IMMORTAL` |
+
 ## Physical file layout
 
 A physical save contains an uncompressed header followed by a chunked zlib
@@ -253,6 +266,10 @@ The relationship is:
 first_chunk_length_offset = zlib_offset - 4
 ```
 
+The first zlib byte is at physical offsets `0x2A0E..0x2A85` in the multiplayer
+fixtures and `0x2820` in the single-player comparison. These offsets vary with
+the serialized header data.
+
 The length words are container metadata. They are not part of the zlib stream.
 A payload decompressor must concatenate only the chunk bodies before passing
 them to zlib.
@@ -287,8 +304,8 @@ files easier to diagnose and supports further byte-layout research.
 
 ## Shared binary reader
 
-The physical-header and `CvPlot` decoders use the same bounded
-`LittleEndianReader`. It provides:
+The header, payload, plot, team, player, and free-list decoders use the same
+bounded `LittleEndianReader`. It provides:
 
 - Exact-length byte reads
 - Signed and unsigned 8-, 16-, and 32-bit integers
@@ -321,7 +338,7 @@ not:
 - Support builds other than `403694`
 - Decode nonempty formal mod arrays
 - Assign meanings to the preserved bridge spans
-- Decompress or decode the payload
+- Interpret decompressed payload structures as part of header parsing
 - Treat quick-header player context as global game state
 
 New compatibility should be added only with representative saves, confirmed

@@ -1,8 +1,47 @@
 <!-- markdownlint-disable -->
-# Map Information
+# `CvMap` and `CvPlot` byte layout
 
+This document is the canonical byte-layout reference for `CvMap`, `CvPlot`,
+`CvArea`, and `CvLandmass` in the examined Lekmod v34.11 saves. For the public
+Python API, see the [`CvPlot` decoder guide](cv-plot-decoder.md).
 
-## CV Plot Information
+## `CvMap` container
+
+The examined multiplayer maps are 48 tiles wide and 42 tiles high. Each map
+therefore contains 2,016 plots. Dimensions and counts are serialized and must
+not be assumed for other saves.
+
+### Fixed header
+
+| Offset | Type | Meaning | Examined multiplayer value |
+|---:|---|---|---:|
+| `+0x000` | `u32` | Version | `1` |
+| `+0x004` | `i32` | Width | `48` |
+| `+0x008` | `i32` | Height | `42` |
+| `+0x00C` | `i32` | Land-plot count | `760` |
+| `+0x010` | `i32` | Owned-plot count | Variable |
+| `+0x014` | `i32` | Natural-wonder count | `3` |
+| `+0x018` | `i32` | Top latitude | `90` |
+| `+0x01C` | `i32` | Bottom latitude | `-90` |
+| `+0x020` | `bool` | Wrap X | `true` |
+| `+0x021` | `bool` | Wrap Y | `false` |
+| `+0x022` | 16 bytes | Map GUID | Changes at the resync |
+| `+0x032` | variable | Total-resource hashed array | `0x1CC` bytes |
+| `+0x1FE` | variable | Land-resource hashed array | `0x1CC` bytes |
+| `+0x3CA` | `CvPlot` | First plot | Version `7` |
+
+Each resource array contains a count followed by hash-and-value pairs:
+
+```text
+u32 entry_count = 57
+repeat 57 times:
+    u32 resource_type_hash
+    i32 value
+```
+
+All 57 hashes are nonzero in both arrays in the examined saves.
+
+## `CvPlot` records
 
 `CvMap` stores one sequential `CvPlot` object for each map tile. The plots are
 stored in row-major order:
@@ -10,6 +49,9 @@ stored in row-major order:
 ```text
 plot_index = (y * map_width) + x
 ```
+
+All 108,864 plot instances in the multiplayer dataset match this coordinate
+order.
 
 A `CvPlot` has no null terminator and no fixed size. Its end is calculated by
 reading its counts and the data controlled by those counts. The following tree
@@ -303,7 +345,80 @@ Build progress + 2 units        0x7D9 bytes (2,009)
 The next `CvPlot` begins immediately after `CvArchaeologyData`. After exactly
 `map_width * map_height` plots, the `CvArea` free-list begins.
 
-### Source references
+There is no unknown four-byte plot extension in this layout. The field omitted
+from an earlier size calculation was the serialized trade-route bit flags in
+the fixed prefix.
+
+## Structures after the plot array
+
+The sizes in this section are confirmed for the examined multiplayer dataset.
+They depend on saved object counts and must not be treated as universal
+constants.
+
+### `CvArea` free-list
+
+The area free-list begins immediately after the final plot. It occupies
+`0x34BCA` bytes in every examined multiplayer save.
+
+Its `0x118`-byte metadata has these values:
+
+| Field | Value |
+|---|---:|
+| Slot count | `64` |
+| Last index | `44` |
+| Free-list head | `-1` |
+| Free count | `0` |
+| Live-object count | `45` |
+
+Each of the 45 live `CvArea` objects is `0x12BA` bytes:
+
+```text
+u32 version = 1
+10 × i32 area counters
+4 × i32 boundaries
+2 × bool flags
+5 × i32[80] player or team arrays
+64 × IDInfo
+64 × i32[7] yield modifiers
+hashed resource array: 57 nonzero hash/value entries
+hashed improvement array: 45 nonzero and 1 zero hash slot
+```
+
+### `CvLandmass` free-list
+
+The landmass free-list follows the area free-list and occupies `0x2A8` bytes in
+the examined multiplayer saves. Its `0x98`-byte metadata reports 32 slots, last
+index 23, no free entries, and 24 live objects.
+
+Each live object is `0x16` bytes:
+
+| Order | Type | Meaning |
+|---:|---|---|
+| 1 | `u32` | Version |
+| 2 | `i32` | ID |
+| 3 | `i32` | Tile count |
+| 4 | `i32` | Centroid X total |
+| 5 | `i32` | Centroid Y total |
+| 6 | `bool` | Water |
+| 7 | `i8` | Continent type |
+
+### End of `CvMap`
+
+One `i32` AI map-hints value follows the landmass list. It is zero in all
+examined saves. For this dataset:
+
+```text
+CvMap_end = final_plot_end
+          + 0x34BCA  CvArea free-list
+          + 0x002A8  CvLandmass free-list
+          + 0x00004  AI map hints
+          = final_plot_end + 0x34E76
+```
+
+A resync can regenerate the map GUID and landmass IDs without changing the
+logical game turn.
+
+## Source references
 
 Lekmod v34.11 is commit
 [`f4b96af9200470ab8fe50dee3dad0dce89c16975`](https://github.com/EnormousApplePie/Lekmod/commit/f4b96af9200470ab8fe50dee3dad0dce89c16975),

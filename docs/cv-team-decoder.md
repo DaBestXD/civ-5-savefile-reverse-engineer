@@ -1,4 +1,4 @@
-# CvTeam array decoder
+# `CvTeam` decoder API
 
 `Civ5SaveDecoder.iter_cv_teams` reads the 64 serialized team records from a
 complete physical `.CIV5SAVE` file. It decompresses the payload, locates
@@ -132,5 +132,5 @@ The decoder rejects:
 - Counts or records that extend beyond the supplied bytes
 - Missing or trailing bytes in a bytes-only team array
 
-See [CvTeam Information](team-information.md) for the byte layout and pinned
+See the [`CvTeam` byte layout](team-information.md) for offsets and pinned
 source references.

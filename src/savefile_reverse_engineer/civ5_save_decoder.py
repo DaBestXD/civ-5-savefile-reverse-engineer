@@ -7,14 +7,17 @@ from pathlib import Path
 from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
+from ._free_list import read_free_list_header
 from .civ5_header import (
     decode_civ5_save_header_bytes,
     decompress_civ5_save_payload_bytes,
 )
 from .civ5_header_types import Civ5SaveHeader
+from .cv_player import iterate_cv_players_from_payload
+from .cv_player_types import CvPlayer
 from .cv_plot import iterate_cv_plots_from_payload, locate_cv_plot_array_end
 from .cv_plot_types import CvPlot
-from .cv_team import iterate_cv_teams_from_payload
+from .cv_team import iterate_cv_teams_from_payload, locate_cv_team_array_end
 from .cv_team_types import CvTeam
 
 _SQLITE_SIGNATURE = b"SQLite format 3\x00"
@@ -26,7 +29,6 @@ _CIV_PLAYER_COUNT = 64
 _YIELD_COUNT = 7
 _RESOURCE_COUNT = 57
 _IMPROVEMENT_COUNT = 46
-_FREE_LIST_MAX_SLOTS = 1 << 13
 
 
 class Civ5SavePayloadDecodeError(ValueError):
@@ -79,6 +81,12 @@ class _CvTeamLocation:
     byte_offset: int
 
 
+@dataclass(frozen=True, slots=True)
+class _CvPlayerLocation:
+    byte_offset: int
+    expected_totals: tuple[tuple[int, int], ...]
+
+
 def _consume_hashed_array(reader: _PayloadReader, field: str) -> None:
     count = reader.u32(f"{field}.count")
     reader.ensure_count_fits(
@@ -108,48 +116,7 @@ def _skip_hashed_int_array(
 
 
 def _read_free_list_header(reader: _PayloadReader, field: str) -> int:
-    slots_offset = reader.offset
-    slot_count = reader.i32(f"{field}.slot_count")
-    if slot_count < 0 or slot_count > _FREE_LIST_MAX_SLOTS:
-        reader.fail(
-            f"slot count is {slot_count}, expected 0..{_FREE_LIST_MAX_SLOTS}",
-            offset=slots_offset,
-            field=f"{field}.slot_count",
-        )
-    last_index = reader.i32(f"{field}.last_index")
-    if last_index < -1 or last_index >= slot_count:
-        reader.fail(
-            f"last index is {last_index}, outside the slot array",
-            field=f"{field}.last_index",
-        )
-    _ = reader.i32(f"{field}.free_list_head")
-    free_count = reader.i32(f"{field}.free_count")
-    if free_count < 0 or free_count > slot_count:
-        reader.fail(
-            f"free count is {free_count}, expected 0..{slot_count}",
-            field=f"{field}.free_count",
-        )
-    _ = reader.i32(f"{field}.current_id")
-    reader.ensure_count_fits(
-        slot_count,
-        item_size=4,
-        reserved_bytes=4,
-        field=f"{field}.slot_count",
-    )
-    _ = reader.read_bytes(slot_count * 4, f"{field}.next_free_indices")
-    live_count = reader.i32(f"{field}.live_count")
-    occupied_count = last_index + 1
-    if live_count < 0 or live_count > occupied_count:
-        reader.fail(
-            f"live count is {live_count}, expected 0..{occupied_count}",
-            field=f"{field}.live_count",
-        )
-    if live_count + free_count != occupied_count:
-        reader.fail(
-            "live and free counts do not cover the occupied slots",
-            field=f"{field}.live_count",
-        )
-    return live_count
+    return read_free_list_header(reader, field).live_count
 
 
 def _skip_cv_area(reader: _PayloadReader, area_index: int) -> None:
@@ -318,6 +285,7 @@ class Civ5SaveDecoder:
     __slots__: tuple[str, ...] = (
         "_header_cache",
         "_payload_cache",
+        "_player_location_cache",
         "_plot_location_cache",
         "_save_bytes",
         "_team_location_cache",
@@ -327,6 +295,7 @@ class Civ5SaveDecoder:
     _header_cache: Civ5SaveHeader | None
     _payload_cache: bytes | None
     _plot_location_cache: _CvPlotLocation | None
+    _player_location_cache: _CvPlayerLocation | None
     _team_location_cache: _CvTeamLocation | None
 
     def __init__(self, save_path: str | PathLike[str]) -> None:
@@ -334,6 +303,7 @@ class Civ5SaveDecoder:
         self._header_cache = None
         self._payload_cache = None
         self._plot_location_cache = None
+        self._player_location_cache = None
         self._team_location_cache = None
 
     @property
@@ -382,4 +352,38 @@ class Civ5SaveDecoder:
             self._team_location_cache = team_location
         return iterate_cv_teams_from_payload(
             payload, byte_offset=team_location.byte_offset
+        )
+
+    def iter_cv_players(self) -> Iterator[CvPlayer]:
+        """Return a fresh lazy iterator over all 64 players and nested objects."""
+        payload = self.decompress_payload()
+        location = self._player_location_cache
+        if location is None:
+            plot_location = self._plot_location_cache
+            if plot_location is None:
+                plot_location = _locate_cv_plots(payload)
+                self._plot_location_cache = plot_location
+            team_location = self._team_location_cache
+            if team_location is None:
+                team_location = _locate_cv_teams(payload, plot_location)
+                self._team_location_cache = team_location
+            teams = tuple(
+                iterate_cv_teams_from_payload(
+                    payload, byte_offset=team_location.byte_offset
+                )
+            )
+            player_offset = locate_cv_team_array_end(
+                payload, byte_offset=team_location.byte_offset
+            )
+            location = _CvPlayerLocation(
+                byte_offset=player_offset,
+                expected_totals=tuple(
+                    (team.total_population, team.total_land) for team in teams
+                ),
+            )
+            self._player_location_cache = location
+        return iterate_cv_players_from_payload(
+            payload,
+            byte_offset=location.byte_offset,
+            expected_totals=location.expected_totals,
         )

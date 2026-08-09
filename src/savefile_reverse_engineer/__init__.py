@@ -27,6 +27,9 @@ from .civ5_header_types import (
     WorldInfo,
 )
 from .civ5_save_decoder import Civ5SaveDecoder, Civ5SavePayloadDecodeError
+from .cv_city_types import CityBuildingState, CvCity, CvCityBuildings
+from .cv_player import CvPlayerDecodeError
+from .cv_player_types import CvPlayer, SerializedFreeList
 from .cv_plot import CvPlotDecodeError
 from .cv_plot_types import (
     ArchaeologyData,
@@ -50,12 +53,14 @@ from .cv_team_types import (
     TeamTechnology,
     TeamYieldChanges,
 )
+from .cv_unit_types import CvUnit
 
 __all__ = (
     "ArchaeologyData",
     "ArchiveGameMode",
     "BaseInfo",
     "BuildProgress",
+    "CityBuildingState",
     "Civ5SaveDecoder",
     "Civ5SaveHeader",
     "Civ5SaveHeaderDecodeError",
@@ -64,10 +69,15 @@ __all__ = (
     "ClimateInfo",
     "CompressedChunk",
     "CustomOption",
+    "CvCity",
+    "CvCityBuildings",
+    "CvPlayer",
+    "CvPlayerDecodeError",
     "CvPlot",
     "CvPlotDecodeError",
     "CvTeam",
     "CvTeamDecodeError",
+    "CvUnit",
     "EnabledDlc",
     "EnabledMod",
     "FlowDirection",
@@ -85,6 +95,7 @@ __all__ = (
     "QuickHeader",
     "RouteType",
     "SeaLevelInfo",
+    "SerializedFreeList",
     "SlotClaim",
     "SlotHints",
     "SlotStatus",

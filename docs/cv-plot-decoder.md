@@ -1,4 +1,4 @@
-# CvPlot array decoder
+# `CvPlot` decoder API
 
 `Civ5SaveDecoder.iter_cv_plots` reads the serialized plot array from a complete
 physical `.CIV5SAVE` file. It decompresses the payload, locates the embedded
@@ -28,7 +28,7 @@ for plot in decoder.iter_cv_plots():
     print(plot.x, plot.y, plot.terrain)
 ```
 
-The function returns a lazy iterator. A record is parsed immediately before it
+The method returns a lazy iterator. A record is parsed immediately before it
 is yielded. Errors later in the byte sequence are therefore raised when the
 iterator reaches those bytes. Consume the iterator fully when the whole array
 must be validated.
@@ -36,6 +36,18 @@ must be validated.
 The decoder reads width and height from `CvMap`. It validates every coordinate
 against row-major order and stops after the declared number of plots. Calling
 the method again returns a fresh iterator and reuses the cached payload.
+
+Callers that already have an exact serialized plot-array byte sequence can use
+the bytes-only decoder:
+
+```python
+from savefile_reverse_engineer.cv_plot import decode_cv_plot_array_bytes
+
+plots = tuple(decode_cv_plot_array_bytes(plot_array_bytes))
+```
+
+The input must start with plot `(0, 0)`, contain complete rows in coordinate
+order, and end immediately after the final plot.
 
 ## Result
 
@@ -57,6 +69,7 @@ readable names.
 City and unit references are returned as data classes with `owner` and
 `object_id` attributes. A plot's `working_city` assigns it to a city's
 catchment; it does not prove that a citizen is currently working the plot.
+Plot unit references do not contain unit types.
 
 ## Database hashes
 

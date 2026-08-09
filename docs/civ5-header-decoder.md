@@ -1,12 +1,12 @@
-# Civ5SaveDecoder and the physical save header
+# `Civ5SaveDecoder` header and payload API
 
 For the byte layout and the reasoning behind the decoder's design, see
 [How the Civilization V physical save header works](civ5-header-format.md).
 
-`Civ5SaveDecoder` reads one complete physical `.CIV5SAVE` file and provides
-lazy access to its header, decompressed payload, and `CvPlot` records. It
-supports the supplied Civilization V build 403694 saves with these
-serialization versions:
+`Civ5SaveDecoder` reads one complete physical `.CIV5SAVE` file. It provides
+access to the header and decompressed payload, plus lazy iterators for
+`CvPlot`, `CvTeam`, and partial `CvPlayer` records. It supports the supplied
+Civilization V build 403694 saves with these serialization versions:
 
 - Outer save version 8
 - Slot-hint version 3
@@ -79,8 +79,8 @@ is confirmed with a fixture.
 Malformed or unsupported data raises `Civ5SaveHeaderDecodeError`. Its `field`
 and `offset` attributes identify the failing header path and physical byte.
 Invalid compressed data raises `Civ5SavePayloadDecompressionError`.
-Invalid SQLite or `CvMap` framing encountered while locating plots raises
-`Civ5SavePayloadDecodeError`.
+Invalid SQLite, `CvMap`, or map-tail framing encountered while locating payload
+records raises `Civ5SavePayloadDecodeError`.
 
 The full pregame archive can contain administrator or civilization passwords,
 email addresses, and an SMTP host. Do not log the complete decoded result
