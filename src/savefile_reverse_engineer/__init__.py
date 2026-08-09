@@ -1,6 +1,9 @@
 """Tools for decoding Civilization V save-file structures."""
 
-from .civ5_header import Civ5SaveHeaderDecodeError, decode_civ5_save_header
+from .civ5_header import (
+    Civ5SaveHeaderDecodeError,
+    Civ5SavePayloadDecompressionError,
+)
 from .civ5_header_types import (
     ArchiveGameMode,
     BaseInfo,
@@ -23,7 +26,8 @@ from .civ5_header_types import (
     UnknownHeaderSpan,
     WorldInfo,
 )
-from .cv_plot import CvPlotDecodeError, decode_cv_plot_array
+from .civ5_save_decoder import Civ5SaveDecoder, Civ5SavePayloadDecodeError
+from .cv_plot import CvPlotDecodeError
 from .cv_plot_types import (
     ArchaeologyData,
     BuildProgress,
@@ -43,8 +47,11 @@ __all__ = (
     "ArchiveGameMode",
     "BaseInfo",
     "BuildProgress",
+    "Civ5SaveDecoder",
     "Civ5SaveHeader",
     "Civ5SaveHeaderDecodeError",
+    "Civ5SavePayloadDecodeError",
+    "Civ5SavePayloadDecompressionError",
     "ClimateInfo",
     "CompressedChunk",
     "CustomOption",
@@ -72,6 +79,4 @@ __all__ = (
     "TurnTimerInfo",
     "UnknownHeaderSpan",
     "WorldInfo",
-    "decode_civ5_save_header",
-    "decode_cv_plot_array",
 )

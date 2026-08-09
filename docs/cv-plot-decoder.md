@@ -1,8 +1,10 @@
 # CvPlot array decoder
 
-The CvPlot decoder reads only the serialized plot array. It does not read a
-physical `.CIV5SAVE` file, decompress save chunks, locate `CvMap`, or decode the
-`CvArea`, `CvLandmass`, `CvPlayer`, or `CvTeam` sections.
+`Civ5SaveDecoder.iter_cv_plots` reads the serialized plot array from a complete
+physical `.CIV5SAVE` file. It decompresses the payload, locates the embedded
+SQLite database and `CvMap`, reads the map dimensions and resource arrays, and
+then decodes exactly `width × height` plots. It does not decode the `CvArea`,
+`CvLandmass`, `CvPlayer`, or `CvTeam` sections.
 
 The supported layout is:
 
@@ -16,19 +18,14 @@ The supported layout is:
 
 ## Input and iteration
 
-Call `decode_cv_plot_array` with one `bytes` value containing every plot. The
-first byte must be the start of plot `(0, 0)`. The final byte must be the end of
-the final plot's `CvArchaeologyData`.
+Construct `Civ5SaveDecoder` with a save path and call `iter_cv_plots`:
 
 ```python
-from pathlib import Path
+from savefile_reverse_engineer import Civ5SaveDecoder
 
-from savefile_reverse_engineer import decode_cv_plot_array
-
-plot_array_bytes = Path("plot-array.bin").read_bytes()
-
-for plot in decode_cv_plot_array(plot_array_bytes):
-    print(plot["x"], plot["y"], plot["terrain"])
+decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
+for plot in decoder.iter_cv_plots():
+    print(plot.x, plot.y, plot.terrain)
 ```
 
 The function returns a lazy iterator. A record is parsed immediately before it
@@ -36,16 +33,17 @@ is yielded. Errors later in the byte sequence are therefore raised when the
 iterator reaches those bytes. Consume the iterator fully when the whole array
 must be validated.
 
-The decoder infers map width when the coordinates move from the first row to
-the second. It checks all later coordinates against row-major order and checks
-that the final row is complete. A one-row array is also valid.
+The decoder reads width and height from `CvMap`. It validates every coordinate
+against row-major order and stops after the declared number of plots. Calling
+the method again returns a fresh iterator and reuses the cached payload.
 
 ## Result
 
-Each yielded `CvPlot` is a `TypedDict`. It contains every confirmed serialized
+Each yielded `CvPlot` is a data class. It contains every confirmed serialized
 field, plus:
 
-- `byte_offset`: the record's starting offset within the supplied bytes
+- `byte_offset`: the record's absolute starting offset in the decompressed
+  payload
 - `byte_length`: the complete variable record length
 
 The result includes the fixed 80-entry arrays stored inside each plot. These
@@ -56,9 +54,9 @@ Plot type, terrain, route, and river flow are returned as `IntEnum` values.
 They remain comparable to their serialized integers while also providing
 readable names.
 
-City and unit references are returned as dictionaries with `owner` and
-`object_id`. A plot's `working_city` assigns it to a city's catchment; it does
-not prove that a citizen is currently working the plot.
+City and unit references are returned as data classes with `owner` and
+`object_id` attributes. A plot's `working_city` assigns it to a city's
+catchment; it does not prove that a citizen is currently working the plot.
 
 ## Database hashes
 
@@ -67,14 +65,14 @@ build types as four-byte hashes instead of text names. Each hashed field has
 this form:
 
 ```python
-{"hash_value": 168372657, "name": "IMPROVEMENT_FARM"}
+HashedType(hash_value=168372657, name="IMPROVEMENT_FARM")
 ```
 
 Names are resolved with the embedded Lekmod v34.11 catalogue. A zero or
 unrecognized hash keeps its exact integer and uses `name=None`:
 
 ```python
-{"hash_value": 0, "name": None}
+HashedType(hash_value=0, name=None)
 ```
 
 This preserves modded or otherwise unknown values without requiring another
@@ -94,17 +92,20 @@ field and returns `work=None`.
 
 ## Errors and validation
 
-Malformed input raises `CvPlotDecodeError`. The exception message and its
-`plot_index` and `offset` attributes identify where decoding failed.
+Malformed plot data raises `CvPlotDecodeError`. The exception message and its
+`plot_index` and `offset` attributes identify where decoding failed. The offset
+is absolute within the decompressed payload.
+
+Missing or invalid embedded SQLite and `CvMap` framing raises
+`Civ5SavePayloadDecodeError` before plot iteration begins.
 
 The decoder rejects:
 
-- Empty input
 - Plot versions other than 7
 - Invalid Boolean bytes or enum values
 - Unsupported build counts
 - Counts that extend beyond the supplied bytes
 - Plot script data, whose string framing is not confirmed
 - Unsupported archaeology versions
-- Truncated records or trailing non-plot bytes
-- Coordinates that are not a complete row-major rectangle
+- Truncated records
+- Coordinates that do not match the declared row-major map dimensions

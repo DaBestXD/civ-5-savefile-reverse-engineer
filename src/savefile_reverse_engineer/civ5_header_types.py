@@ -1,7 +1,7 @@
 """Public result and enum types for the physical Civ V save header."""
 
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import TypedDict
 
 
 class QuickGameMode(IntEnum):
@@ -45,7 +45,8 @@ class SlotStatus(IntEnum):
     OBSERVER = 4
 
 
-class UnknownHeaderSpan(TypedDict):
+@dataclass(slots=True)
+class UnknownHeaderSpan:
     """Header bytes whose framing is known but whose meaning is not."""
 
     label: str
@@ -54,7 +55,8 @@ class UnknownHeaderSpan(TypedDict):
     data: bytes
 
 
-class EnabledDlc(TypedDict):
+@dataclass(slots=True)
+class EnabledDlc:
     """One enabled-content entry in the quick header."""
 
     guid: str
@@ -62,7 +64,8 @@ class EnabledDlc(TypedDict):
     name: str
 
 
-class EnabledMod(TypedDict):
+@dataclass(slots=True)
+class EnabledMod:
     """One formal mod entry in the quick header."""
 
     guid: str
@@ -70,7 +73,8 @@ class EnabledMod(TypedDict):
     name: str
 
 
-class QuickHeader(TypedDict):
+@dataclass(slots=True)
+class QuickHeader:
     """The quick-reference fields at the start of a physical save."""
 
     signature: str
@@ -91,7 +95,8 @@ class QuickHeader(TypedDict):
     player_color: str
 
 
-class PlayerSlot(TypedDict):
+@dataclass(slots=True)
+class PlayerSlot:
     """One of the 64 entries combined from the slot-hint arrays."""
 
     index: int
@@ -107,7 +112,8 @@ class PlayerSlot(TypedDict):
     leader_key: str
 
 
-class SlotHints(TypedDict):
+@dataclass(slots=True)
+class SlotHints:
     """The compact pregame slot setup stored before the full archive."""
 
     version: int
@@ -117,7 +123,8 @@ class SlotHints(TypedDict):
     players: tuple[PlayerSlot, ...]
 
 
-class BaseInfo(TypedDict):
+@dataclass(slots=True)
+class BaseInfo:
     """Fields serialized by CvBaseInfo."""
 
     id: int
@@ -131,6 +138,7 @@ class BaseInfo(TypedDict):
     text: str
 
 
+@dataclass(slots=True)
 class ClimateInfo(BaseInfo):
     """Serialized climate database row."""
 
@@ -147,12 +155,14 @@ class ClimateInfo(BaseInfo):
     random_ice_latitude: float
 
 
+@dataclass(slots=True)
 class SeaLevelInfo(BaseInfo):
     """Serialized sea-level database row."""
 
     sea_level_change: int
 
 
+@dataclass(slots=True)
 class TurnTimerInfo(BaseInfo):
     """Serialized turn-timer database row."""
 
@@ -162,6 +172,7 @@ class TurnTimerInfo(BaseInfo):
     first_turn_multiplier: int
 
 
+@dataclass(slots=True)
 class WorldInfo(BaseInfo):
     """Serialized version-2 world-size database row."""
 
@@ -187,14 +198,16 @@ class WorldInfo(BaseInfo):
     num_cities_tech_cost_modifier: int
 
 
-class CustomOption(TypedDict):
+@dataclass(slots=True)
+class CustomOption:
     """One named game or map option."""
 
     name: str
     value: int
 
 
-class PreGameArchive(TypedDict):
+@dataclass(slots=True)
+class PreGameArchive:
     """Every field written by build 403694 CvPreGame archive version 6."""
 
     version: int
@@ -286,7 +299,8 @@ class PreGameArchive(TypedDict):
     turn_notify_email_addresses: tuple[str, ...]
 
 
-class CompressedChunk(TypedDict):
+@dataclass(slots=True)
+class CompressedChunk:
     """Physical location of one compressed payload chunk."""
 
     length_offset: int
@@ -294,7 +308,8 @@ class CompressedChunk(TypedDict):
     length: int
 
 
-class Civ5SaveHeader(TypedDict):
+@dataclass(slots=True)
+class Civ5SaveHeader:
     """Decoded physical save header and validated payload-container metadata."""
 
     header_length: int

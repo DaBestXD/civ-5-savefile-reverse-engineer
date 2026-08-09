@@ -32,6 +32,7 @@ _REVEALED_WORD_COUNT = 4
 _LEKMOD_BUILD_SLOT_COUNT = 70
 _MINIMUM_ARCHAEOLOGY_LENGTH = 20
 
+
 class CvPlotDecodeError(ValueError):
     """A malformed or unsupported value in a serialized CvPlot array."""
 
@@ -41,9 +42,7 @@ class CvPlotDecodeError(ValueError):
     def __init__(self, message: str, *, offset: int, plot_index: int) -> None:
         self.offset = offset
         self.plot_index = plot_index
-        super().__init__(
-            f"plot {plot_index} at byte offset 0x{offset:X}: {message}"
-        )
+        super().__init__(f"plot {plot_index} at byte offset 0x{offset:X}: {message}")
 
 
 class _Reader(LittleEndianReader):
@@ -71,6 +70,7 @@ class _Reader(LittleEndianReader):
             plot_index=self.plot_index,
         )
 
+
 def _read_enum[EnumType: IntEnum](
     reader: _Reader,
     enum_type: type[EnumType],
@@ -93,9 +93,7 @@ def _read_sized_enum[EnumType: IntEnum](
     field: str,
 ) -> EnumType:
     offset = reader.offset
-    return _read_enum(
-        reader, enum_type, read_raw(field), field=field, offset=offset
-    )
+    return _read_enum(reader, enum_type, read_raw(field), field=field, offset=offset)
 
 
 def _read_i8_enum[EnumType: IntEnum](
@@ -120,9 +118,7 @@ def _resolve_hash(hash_value: int, names: Mapping[int, str]) -> HashedType:
     return HashedType(hash_value=hash_value, name=names.get(hash_value))
 
 
-def _read_hash(
-    reader: _Reader, names: Mapping[int, str], *, field: str
-) -> HashedType:
+def _read_hash(reader: _Reader, names: Mapping[int, str], *, field: str) -> HashedType:
     return _resolve_hash(reader.u32(field), names)
 
 
@@ -188,12 +184,7 @@ def _read_build_progress(
             f"inner_build_count is {inner_count}, expected {_LEKMOD_BUILD_SLOT_COUNT}"
         )
 
-    minimum_tail = (
-        (_PLAYER_TEAM_COUNT * 2)
-        + 4
-        + 1
-        + _MINIMUM_ARCHAEOLOGY_LENGTH
-    )
+    minimum_tail = (_PLAYER_TEAM_COUNT * 2) + 4 + 1 + _MINIMUM_ARCHAEOLOGY_LENGTH
     reader.ensure_count_fits(
         inner_count,
         item_size=4,
@@ -221,9 +212,7 @@ def _read_archaeology(reader: _Reader) -> ArchaeologyData:
     version_offset = reader.offset
     version = reader.u32("archaeology.version")
     if version not in (1, 2):
-        reader.fail(
-            f"unsupported archaeology version {version}", offset=version_offset
-        )
+        reader.fail(f"unsupported archaeology version {version}", offset=version_offset)
     artifact_type = reader.i32("archaeology.artifact_type")
     era = reader.i32("archaeology.era")
     player_1 = reader.i32("archaeology.player_1")
@@ -275,26 +264,20 @@ def _read_plot(reader: _Reader) -> CvPlot:
     terrain = _read_i8_enum(reader, TerrainType, field="terrain")
     feature = _read_hash(reader, FEATURE_HASH_NAMES, field="feature")
     resource = _read_hash(reader, RESOURCE_HASH_NAMES, field="resource")
-    improvement = _read_hash(
-        reader, IMPROVEMENT_HASH_NAMES, field="improvement"
-    )
+    improvement = _read_hash(reader, IMPROVEMENT_HASH_NAMES, field="improvement")
     under_construction_improvement = _read_hash(
         reader,
         IMPROVEMENT_HASH_NAMES,
         field="under_construction_improvement",
     )
     player_that_built_improvement = reader.i8("player_that_built_improvement")
-    player_responsible_for_improvement = reader.i8(
-        "player_responsible_for_improvement"
-    )
+    player_responsible_for_improvement = reader.i8("player_responsible_for_improvement")
     player_responsible_for_route = reader.i8("player_responsible_for_route")
     player_that_cleared_camp = reader.i8("player_that_cleared_camp")
     route = _read_i8_enum(reader, RouteType, field="route")
     world_anchor = reader.i8("world_anchor")
     world_anchor_data = reader.i8("world_anchor_data")
-    east_river_flow = _read_i8_enum(
-        reader, FlowDirection, field="east_river_flow"
-    )
+    east_river_flow = _read_i8_enum(reader, FlowDirection, field="east_river_flow")
     southeast_river_flow = _read_i8_enum(
         reader, FlowDirection, field="southeast_river_flow"
     )
@@ -310,25 +293,21 @@ def _read_plot(reader: _Reader) -> CvPlot:
     yields = _read_yields(reader)
 
     found_values = tuple(
-        reader.i32(f"found_values[{index}]")
-        for index in range(_PLAYER_TEAM_COUNT)
+        reader.i32(f"found_values[{index}]") for index in range(_PLAYER_TEAM_COUNT)
     )
     player_city_radius_counts = tuple(
         reader.i8(f"player_city_radius_counts[{index}]")
         for index in range(_PLAYER_TEAM_COUNT)
     )
     visibility_counts = tuple(
-        reader.i16(f"visibility_counts[{index}]")
-        for index in range(_PLAYER_TEAM_COUNT)
+        reader.i16(f"visibility_counts[{index}]") for index in range(_PLAYER_TEAM_COUNT)
     )
     revealed_owners = tuple(
-        reader.i8(f"revealed_owners[{index}]")
-        for index in range(_PLAYER_TEAM_COUNT)
+        reader.i8(f"revealed_owners[{index}]") for index in range(_PLAYER_TEAM_COUNT)
     )
     river_crossing = reader.i8("river_crossing")
     revealed_bits = tuple(
-        reader.u32(f"revealed_bits[{index}]")
-        for index in range(_REVEALED_WORD_COUNT)
+        reader.u32(f"revealed_bits[{index}]") for index in range(_REVEALED_WORD_COUNT)
     )
     resource_force_reveals = tuple(
         reader.read_bool(f"resource_force_reveals[{index}]")
@@ -359,9 +338,7 @@ def _read_plot(reader: _Reader) -> CvPlot:
         )
 
     outer_build_count = reader.i32("outer_build_count")
-    inner_build_count, build_progress = _read_build_progress(
-        reader, outer_build_count
-    )
+    inner_build_count, build_progress = _read_build_progress(reader, outer_build_count)
     invisible_visibility = tuple(
         reader.i16(f"invisible_visibility[{index}]")
         for index in range(_PLAYER_TEAM_COUNT)
@@ -452,15 +429,15 @@ def _read_plot(reader: _Reader) -> CvPlot:
 def _validate_coordinates(
     reader: _Reader, plot: CvPlot, plot_index: int, width: int | None
 ) -> int | None:
-    x = plot["x"]
-    y = plot["y"]
-    offset = plot["byte_offset"] + 4
+    x = plot.x
+    y = plot.y
+    offset = plot.byte_offset + 4
     if plot_index == 0:
         if (x, y) != (0, 0):
             reader.fail(
                 f"first coordinates are ({x}, {y}), expected (0, 0)", offset=offset
             )
-        return None
+        return width
 
     if width is None:
         if y == 0 and x == plot_index:
@@ -501,7 +478,7 @@ def _iterate_cv_plot_array(plot_array_bytes: bytes) -> Iterator[CvPlot]:
         )
 
 
-def decode_cv_plot_array(plot_array_bytes: bytes) -> Iterator[CvPlot]:
+def decode_cv_plot_array_bytes(plot_array_bytes: bytes) -> Iterator[CvPlot]:
     """Return a lazy iterator over a complete serialized CvPlot array.
 
     The input must start with plot ``(0, 0)`` and end immediately after the
@@ -510,7 +487,20 @@ def decode_cv_plot_array(plot_array_bytes: bytes) -> Iterator[CvPlot]:
     """
 
     if not plot_array_bytes:
-        raise CvPlotDecodeError(
-            "the CvPlot array is empty", offset=0, plot_index=0
-        )
+        raise CvPlotDecodeError("the CvPlot array is empty", offset=0, plot_index=0)
     return _iterate_cv_plot_array(plot_array_bytes)
+
+
+def iterate_cv_plots_from_payload(
+    payload: bytes, *, byte_offset: int, width: int, height: int
+) -> Iterator[CvPlot]:
+    """Yield a known-size CvPlot array from a decompressed save payload."""
+    reader = _Reader(payload)
+    reader.offset = byte_offset
+    plot_count = width * height
+
+    for plot_index in range(plot_count):
+        reader.plot_index = plot_index
+        plot = _read_plot(reader)
+        _ = _validate_coordinates(reader, plot, plot_index, width)
+        yield plot

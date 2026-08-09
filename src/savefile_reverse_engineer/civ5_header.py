@@ -1,5 +1,6 @@
 """Decode the physical header of supported Civilization V save files."""
 
+import zlib
 from enum import IntEnum
 from typing import NoReturn, override
 from uuid import UUID
@@ -48,6 +49,10 @@ class Civ5SaveHeaderDecodeError(ValueError):
         self.offset = offset
         self.field = field
         super().__init__(f"{field} at physical byte offset 0x{offset:X}: {message}")
+
+
+class Civ5SavePayloadDecompressionError(ValueError):
+    """A compressed Civ V save payload that zlib cannot decompress."""
 
 
 class _HeaderReader(LittleEndianReader):
@@ -195,7 +200,15 @@ def _read_base_info(reader: _HeaderReader, field: str) -> BaseInfo:
 def _read_climate_info(reader: _HeaderReader, field: str) -> ClimateInfo:
     base = _read_base_info(reader, field)
     return ClimateInfo(
-        **base,
+        id=base.id,
+        civilopedia=base.civilopedia,
+        description=base.description,
+        help=base.help,
+        disabled_help=base.disabled_help,
+        strategy=base.strategy,
+        type=base.type,
+        text_key=base.text_key,
+        text=base.text,
         desert_percent_change=reader.i32(f"{field}.desert_percent_change"),
         jungle_latitude=reader.i32(f"{field}.jungle_latitude"),
         hill_range=reader.i32(f"{field}.hill_range"),
@@ -215,7 +228,15 @@ def _read_climate_info(reader: _HeaderReader, field: str) -> ClimateInfo:
 def _read_sea_level_info(reader: _HeaderReader, field: str) -> SeaLevelInfo:
     base = _read_base_info(reader, field)
     return SeaLevelInfo(
-        **base,
+        id=base.id,
+        civilopedia=base.civilopedia,
+        description=base.description,
+        help=base.help,
+        disabled_help=base.disabled_help,
+        strategy=base.strategy,
+        type=base.type,
+        text_key=base.text_key,
+        text=base.text,
         sea_level_change=reader.i32(f"{field}.sea_level_change"),
     )
 
@@ -223,7 +244,15 @@ def _read_sea_level_info(reader: _HeaderReader, field: str) -> SeaLevelInfo:
 def _read_turn_timer_info(reader: _HeaderReader, field: str) -> TurnTimerInfo:
     base = _read_base_info(reader, field)
     return TurnTimerInfo(
-        **base,
+        id=base.id,
+        civilopedia=base.civilopedia,
+        description=base.description,
+        help=base.help,
+        disabled_help=base.disabled_help,
+        strategy=base.strategy,
+        type=base.type,
+        text_key=base.text_key,
+        text=base.text,
         base_time=reader.i32(f"{field}.base_time"),
         city_resource=reader.i32(f"{field}.city_resource"),
         unit_resource=reader.i32(f"{field}.unit_resource"),
@@ -243,7 +272,15 @@ def _read_world_info(reader: _HeaderReader, field: str) -> WorldInfo:
     )
     base = _read_base_info(reader, field)
     return WorldInfo(
-        **base,
+        id=base.id,
+        civilopedia=base.civilopedia,
+        description=base.description,
+        help=base.help,
+        disabled_help=base.disabled_help,
+        strategy=base.strategy,
+        type=base.type,
+        text_key=base.text_key,
+        text=base.text,
         version=version,
         default_players=reader.i32(f"{field}.default_players"),
         default_minor_civs=reader.i32(f"{field}.default_minor_civs"),
@@ -784,7 +821,7 @@ def _read_compressed_chunks(
     return tuple(chunks)
 
 
-def decode_civ5_save_header(save_bytes: bytes) -> Civ5SaveHeader:
+def decode_civ5_save_header_bytes(save_bytes: bytes) -> Civ5SaveHeader:
     """Decode a supported physical ``.CIV5SAVE`` header from complete file bytes.
 
     The returned pregame archive can contain passwords and email addresses.
@@ -806,7 +843,7 @@ def decode_civ5_save_header(save_bytes: bytes) -> Civ5SaveHeader:
     )
     first_chunk_length_offset = reader.offset
     compressed_chunks = _read_compressed_chunks(reader)
-    zlib_offset = compressed_chunks[0]["data_offset"]
+    zlib_offset = compressed_chunks[0].data_offset
     return Civ5SaveHeader(
         header_length=first_chunk_length_offset,
         first_chunk_length_offset=first_chunk_length_offset,
@@ -818,3 +855,38 @@ def decode_civ5_save_header(save_bytes: bytes) -> Civ5SaveHeader:
         unknown_spans=unknown_spans,
         compressed_chunks=compressed_chunks,
     )
+
+
+def decompress_civ5_save_payload_bytes(
+    save_bytes: bytes, header: Civ5SaveHeader
+) -> bytes:
+    """Return the complete decompressed payload from a supported save file.
+
+    The input must be the complete physical ``.CIV5SAVE`` file. The physical
+    header and every compressed chunk are validated before the chunk bodies are
+    joined and passed to one zlib decompressor.
+    """
+    compressed_stream = b"".join(
+        save_bytes[chunk.data_offset : chunk.data_offset + chunk.length]
+        for chunk in header.compressed_chunks
+    )
+    decompressor = zlib.decompressobj()
+
+    try:
+        payload = decompressor.decompress(compressed_stream)
+        payload += decompressor.flush()
+    except zlib.error as error:
+        raise Civ5SavePayloadDecompressionError(
+            f"could not decompress the chunked zlib payload: {error}"
+        ) from error
+
+    if decompressor.unused_data:
+        raise Civ5SavePayloadDecompressionError(
+            "compressed payload contains data after the zlib stream"
+        )
+    if decompressor.unconsumed_tail:
+        raise Civ5SavePayloadDecompressionError(
+            "zlib did not consume the complete compressed payload"
+        )
+
+    return payload

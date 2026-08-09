@@ -1,7 +1,7 @@
 """Public result and enum types for the CvPlot decoder."""
 
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import TypedDict
 
 
 class PlotType(IntEnum):
@@ -49,21 +49,24 @@ class FlowDirection(IntEnum):
     NORTHWEST = 5
 
 
-class HashedType(TypedDict):
+@dataclass(slots=True)
+class HashedType:
     """A serialized database hash and its known Lekmod v34.11 type name."""
 
     hash_value: int
     name: str | None
 
 
-class ObjectReference(TypedDict):
+@dataclass(slots=True)
+class ObjectReference:
     """An owner and object-ID pair serialized as Civ V IDInfo."""
 
     owner: int
     object_id: int
 
 
-class PlotFlags(TypedDict):
+@dataclass(slots=True)
+class PlotFlags:
     """The fourteen one-byte flags serialized by Lekmod v34.11."""
 
     starting_plot: bool
@@ -82,7 +85,8 @@ class PlotFlags(TypedDict):
     forced_fresh_water: bool
 
 
-class PlotYields(TypedDict):
+@dataclass(slots=True)
+class PlotYields:
     """The seven yields serialized by Lekmod v34.11."""
 
     food: int
@@ -94,14 +98,16 @@ class PlotYields(TypedDict):
     golden_age_points: int
 
 
-class BuildProgress(TypedDict):
+@dataclass(slots=True)
+class BuildProgress:
     """One interleaved build-progress entry."""
 
     build: HashedType
     progress: int | None
 
 
-class ArchaeologyData(TypedDict):
+@dataclass(slots=True)
+class ArchaeologyData:
     """The final CvArchaeologyData record in a plot."""
 
     version: int
@@ -112,7 +118,8 @@ class ArchaeologyData(TypedDict):
     work: int | None
 
 
-class CvPlot(TypedDict):
+@dataclass(slots=True)
+class CvPlot:
     """All confirmed fields in a Lekmod v34.11 CvPlot version 7 record."""
 
     byte_offset: int

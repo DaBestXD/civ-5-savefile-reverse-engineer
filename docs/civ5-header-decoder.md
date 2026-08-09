@@ -1,12 +1,12 @@
-# Physical Civ V save-header decoder
+# Civ5SaveDecoder and the physical save header
 
 For the byte layout and the reasoning behind the decoder's design, see
 [How the Civilization V physical save header works](civ5-header-format.md).
 
-The header decoder reads a complete physical `.CIV5SAVE` file and returns the
-uncompressed information that precedes the chunked zlib payload. It supports
-the supplied Civilization V build 403694 saves with these serialization
-versions:
+`Civ5SaveDecoder` reads one complete physical `.CIV5SAVE` file and provides
+lazy access to its header, decompressed payload, and `CvPlot` records. It
+supports the supplied Civilization V build 403694 saves with these
+serialization versions:
 
 - Outer save version 8
 - Slot-hint version 3
@@ -14,25 +14,36 @@ versions:
 - `CvWorldInfo` version 2
 
 ```python
-from pathlib import Path
+from savefile_reverse_engineer import Civ5SaveDecoder
 
-from savefile_reverse_engineer import decode_civ5_save_header
+decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
+header = decoder.header
 
-save_bytes = Path("AutoSave.Civ5Save").read_bytes()
-header = decode_civ5_save_header(save_bytes)
-
-print(header["quick"]["turn"])
-print(header["pregame"]["game_name"])
-for player in header["slot_hints"]["players"]:
-    if player["display_name"] is not None:
-        print(player["display_name"], player["steam_id"])
+print(header.quick.turn)
+print(header.pregame.game_name)
+for player in header.slot_hints.players:
+    if player.display_name is not None:
+        print(player.display_name, player.steam_id)
 ```
 
-The input must contain the complete physical file. The decoder validates every
-compressed chunk length through physical EOF, but it does not copy or
-decompress the payload.
+The constructor accepts a string or path-like object. It reads the file once,
+so later filesystem changes do not affect the decoder. Header decoding is
+deferred until `header` is first accessed and its result is cached.
+
+Use `decompress_payload` to return the complete decompressed payload:
+
+```python
+payload = decoder.decompress_payload()
+```
+
+The method validates the header and chunk framing, removes the physical chunk
+lengths, joins the chunk bodies, and decompresses them as one zlib stream. The
+returned `bytes` value is cached for later payload decoders.
 
 ## Result sections
+
+The `header` property returns a `Civ5SaveHeader` data class. Its nested result
+records are data classes too, and their fields are available as attributes.
 
 `quick` contains the fields used for the save browser, including the game and
 build versions, turn, active civilization context, difficulty, eras, speed,
@@ -67,6 +78,9 @@ is confirmed with a fixture.
 
 Malformed or unsupported data raises `Civ5SaveHeaderDecodeError`. Its `field`
 and `offset` attributes identify the failing header path and physical byte.
+Invalid compressed data raises `Civ5SavePayloadDecompressionError`.
+Invalid SQLite or `CvMap` framing encountered while locating plots raises
+`Civ5SavePayloadDecodeError`.
 
 The full pregame archive can contain administrator or civilization passwords,
 email addresses, and an SMTP host. Do not log the complete decoded result

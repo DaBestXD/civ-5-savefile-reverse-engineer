@@ -1,6 +1,7 @@
 """Tests for the bytes-only CvPlot array decoder."""
 
 from collections.abc import Iterator
+from dataclasses import fields
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,8 @@ from savefile_reverse_engineer import (
     PlotType,
     RouteType,
     TerrainType,
-    decode_cv_plot_array,
 )
+from savefile_reverse_engineer.cv_plot import decode_cv_plot_array_bytes
 
 _FIXTURE_PATH = Path(__file__).parent / "test_data/cv_plot/turn_76_plot_array.bin"
 _FIXTURE_BYTES = _FIXTURE_PATH.read_bytes()
@@ -29,37 +30,37 @@ def _replace_unsigned(data: bytes, offset: int, size: int, value: int) -> bytes:
 
 
 def _consume(data: bytes) -> tuple[CvPlot, ...]:
-    return tuple(decode_cv_plot_array(data))
+    return tuple(decode_cv_plot_array_bytes(data))
 
 
 def test_turn_76_fixture_decodes_completely() -> None:
     plots = _consume(_FIXTURE_BYTES)
 
     assert len(plots) == 2_016
-    assert (plots[0]["x"], plots[0]["y"]) == (0, 0)
-    assert (plots[-1]["x"], plots[-1]["y"]) == (47, 41)
-    assert plots[-1]["byte_offset"] == _LAST_PLOT_OFFSET
-    assert plots[-1]["byte_offset"] + plots[-1]["byte_length"] == len(_FIXTURE_BYTES)
+    assert (plots[0].x, plots[0].y) == (0, 0)
+    assert (plots[-1].x, plots[-1].y) == (47, 41)
+    assert plots[-1].byte_offset == _LAST_PLOT_OFFSET
+    assert plots[-1].byte_offset + plots[-1].byte_length == len(_FIXTURE_BYTES)
 
 
 def test_decodes_fixed_fields_and_embedded_arrays() -> None:
-    plot = next(decode_cv_plot_array(_FIXTURE_BYTES))
+    plot = next(decode_cv_plot_array_bytes(_FIXTURE_BYTES))
 
-    assert plot["byte_length"] == _BASE_PLOT_LENGTH
-    assert isinstance(plot["plot_type"], PlotType)
-    assert isinstance(plot["terrain"], TerrainType)
-    assert isinstance(plot["route"], RouteType)
-    assert isinstance(plot["east_river_flow"], FlowDirection)
-    assert len(plot["found_values"]) == 80
-    assert len(plot["player_city_radius_counts"]) == 80
-    assert len(plot["visibility_counts"]) == 80
-    assert len(plot["revealed_owners"]) == 80
-    assert len(plot["resource_force_reveals"]) == 80
-    assert len(plot["revealed_improvements"]) == 80
-    assert len(plot["revealed_routes"]) == 80
-    assert len(plot["no_settling"]) == 22
-    assert len(plot["invisible_visibility"]) == 80
-    assert set(plot["yields"]) == {
+    assert plot.byte_length == _BASE_PLOT_LENGTH
+    assert isinstance(plot.plot_type, PlotType)
+    assert isinstance(plot.terrain, TerrainType)
+    assert isinstance(plot.route, RouteType)
+    assert isinstance(plot.east_river_flow, FlowDirection)
+    assert len(plot.found_values) == 80
+    assert len(plot.player_city_radius_counts) == 80
+    assert len(plot.visibility_counts) == 80
+    assert len(plot.revealed_owners) == 80
+    assert len(plot.resource_force_reveals) == 80
+    assert len(plot.revealed_improvements) == 80
+    assert len(plot.revealed_routes) == 80
+    assert len(plot.no_settling) == 22
+    assert len(plot.invisible_visibility) == 80
+    assert {field.name for field in fields(plot.yields)} == {
         "food",
         "production",
         "gold",
@@ -72,16 +73,17 @@ def test_decodes_fixed_fields_and_embedded_arrays() -> None:
 
 def test_resolves_known_hashes_and_preserves_zero() -> None:
     target: CvPlot | None = None
-    for index, plot in enumerate(decode_cv_plot_array(_FIXTURE_BYTES)):
+    for index, plot in enumerate(decode_cv_plot_array_bytes(_FIXTURE_BYTES)):
         if index == 408:
             target = plot
             break
 
     assert target is not None, "plot 408 was not decoded"
-    assert target["resource"]["name"] == "RESOURCE_WHEAT"
-    assert target["resource"]["hash_value"] == 0x2E1008E0
-    assert target["improvement"]["name"] == "IMPROVEMENT_FARM"
-    assert target["feature"] == {"hash_value": 0, "name": None}
+    assert target.resource.name == "RESOURCE_WHEAT"
+    assert target.resource.hash_value == 0x2E1008E0
+    assert target.improvement.name == "IMPROVEMENT_FARM"
+    assert target.feature.hash_value == 0
+    assert target.feature.name is None
 
 
 def test_decodes_build_progress_and_unit_references() -> None:
@@ -92,49 +94,50 @@ def test_decodes_build_progress_and_unit_references() -> None:
     # replace only the two serialized coordinate fields for this test.
     build_blob = _replace_unsigned(build_blob, 4, 2, 0)
     build_blob = _replace_unsigned(build_blob, 6, 2, 0)
-    plot = next(decode_cv_plot_array(build_blob))
+    plot = next(decode_cv_plot_array_bytes(build_blob))
 
-    assert plot["outer_build_count"] == 70
-    assert plot["inner_build_count"] == 70
-    assert len(plot["build_progress"]) == 70
-    assert plot["build_progress"][2]["build"]["name"] == "BUILD_FARM"
-    assert plot["build_progress"][45]["progress"] is None
-    assert plot["build_progress"][46]["build"]["name"] is None
-    assert len(plot["unit_references"]) == 1
+    assert plot.outer_build_count == 70
+    assert plot.inner_build_count == 70
+    assert len(plot.build_progress) == 70
+    assert plot.build_progress[2].build.name == "BUILD_FARM"
+    assert plot.build_progress[45].progress is None
+    assert plot.build_progress[46].build.name is None
+    assert len(plot.unit_references) == 1
 
 
 def test_unknown_hash_keeps_integer_and_none_name() -> None:
     unknown_hash = 0x12345678
     data = _replace_unsigned(_FIXTURE_BYTES, 0x3C, 4, unknown_hash)
-    plot = next(decode_cv_plot_array(data))
+    plot = next(decode_cv_plot_array_bytes(data))
 
-    assert plot["feature"] == {"hash_value": unknown_hash, "name": None}
+    assert plot.feature.hash_value == unknown_hash
+    assert plot.feature.name is None
 
 
 def test_supports_archaeology_version_one() -> None:
     base_plot = _FIXTURE_BYTES[:_BASE_PLOT_LENGTH]
     archaeology_offset = _BASE_PLOT_LENGTH - 24
     version_one = _replace_unsigned(base_plot, archaeology_offset, 4, 1)[:-4]
-    plot = next(decode_cv_plot_array(version_one))
+    plot = next(decode_cv_plot_array_bytes(version_one))
 
-    assert plot["archaeology"]["version"] == 1
-    assert plot["archaeology"]["work"] is None
-    assert plot["byte_length"] == _BASE_PLOT_LENGTH - 4
+    assert plot.archaeology.version == 1
+    assert plot.archaeology.work is None
+    assert plot.byte_length == _BASE_PLOT_LENGTH - 4
 
 
 def test_iterator_is_lazy_after_first_record() -> None:
     first_plot_and_garbage = _FIXTURE_BYTES[:_BASE_PLOT_LENGTH] + b"\0\0\0\0"
-    iterator: Iterator[CvPlot] = decode_cv_plot_array(first_plot_and_garbage)
+    iterator: Iterator[CvPlot] = decode_cv_plot_array_bytes(first_plot_and_garbage)
 
     first = next(iterator)
-    assert (first["x"], first["y"]) == (0, 0)
+    assert (first.x, first.y) == (0, 0)
     with pytest.raises(CvPlotDecodeError):
         _ = next(iterator)
 
 
 def test_rejects_empty_and_truncated_input() -> None:
     with pytest.raises(CvPlotDecodeError, match="empty"):
-        _ = decode_cv_plot_array(b"")
+        _ = decode_cv_plot_array_bytes(b"")
     with pytest.raises(CvPlotDecodeError, match="truncated"):
         _ = _consume(_FIXTURE_BYTES[:100])
 
@@ -145,11 +148,11 @@ def test_rejects_invalid_version_boolean_and_enum() -> None:
     invalid_enum = _replace_unsigned(_FIXTURE_BYTES, 0x3A, 1, 9)
 
     with pytest.raises(CvPlotDecodeError, match="CvPlot version"):
-        _ = next(decode_cv_plot_array(invalid_version))
+        _ = next(decode_cv_plot_array_bytes(invalid_version))
     with pytest.raises(CvPlotDecodeError, match="Boolean"):
-        _ = next(decode_cv_plot_array(invalid_boolean))
+        _ = next(decode_cv_plot_array_bytes(invalid_boolean))
     with pytest.raises(CvPlotDecodeError, match="plot_type"):
-        _ = next(decode_cv_plot_array(invalid_enum))
+        _ = next(decode_cv_plot_array_bytes(invalid_enum))
 
 
 def test_rejects_script_data_and_unsupported_counts() -> None:
@@ -158,11 +161,11 @@ def test_rejects_script_data_and_unsupported_counts() -> None:
     invalid_unit_count = _replace_unsigned(_FIXTURE_BYTES, 0x608, 4, 0xFFFFFFFF)
 
     with pytest.raises(CvPlotDecodeError, match="script data"):
-        _ = next(decode_cv_plot_array(script_data))
+        _ = next(decode_cv_plot_array_bytes(script_data))
     with pytest.raises(CvPlotDecodeError, match="outer_build_count"):
-        _ = next(decode_cv_plot_array(invalid_build_count))
+        _ = next(decode_cv_plot_array_bytes(invalid_build_count))
     with pytest.raises(CvPlotDecodeError, match="unit_reference_count"):
-        _ = next(decode_cv_plot_array(invalid_unit_count))
+        _ = next(decode_cv_plot_array_bytes(invalid_unit_count))
 
 
 def test_rejects_unsupported_archaeology_and_trailing_bytes() -> None:
@@ -170,7 +173,7 @@ def test_rejects_unsupported_archaeology_and_trailing_bytes() -> None:
     invalid_archaeology = _replace_unsigned(_FIXTURE_BYTES, archaeology_offset, 4, 3)
 
     with pytest.raises(CvPlotDecodeError, match="archaeology version"):
-        _ = next(decode_cv_plot_array(invalid_archaeology))
+        _ = next(decode_cv_plot_array_bytes(invalid_archaeology))
     with pytest.raises(CvPlotDecodeError):
         _ = _consume(_FIXTURE_BYTES + b"\0\0\0\0")
 

@@ -1,9 +1,19 @@
 # CIV 5 Save File Reverse Engineer
 
-The package currently includes bytes-only decoders for the physical build
-403694 save header and for Lekmod v34.11 `CvPlot` arrays. See
+The package provides a path-based `Civ5SaveDecoder` for the physical build
+403694 save header, decompressed payload, and Lekmod v34.11 `CvPlot` array. See
 `docs/civ5-header-decoder.md` and `docs/cv-plot-decoder.md` for their supported
 layouts and APIs.
+
+```python
+from savefile_reverse_engineer import Civ5SaveDecoder
+
+decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
+print(decoder.header.quick.turn)
+
+for plot in decoder.iter_cv_plots():
+    print(plot.x, plot.y, plot.terrain)
+```
 
 ## Project Goals
 
