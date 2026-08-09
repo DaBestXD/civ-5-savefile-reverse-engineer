@@ -51,7 +51,7 @@ def test_iterates_multiplayer_plots_as_semantic_records() -> None:
 
     repeated_first = next(decoder.iter_plots())
     assert repeated_first == plots[0]
-    assert repeated_first is not plots[0]
+    assert repeated_first is plots[0]
 
 
 def test_iterates_single_player_map_size() -> None:
@@ -148,7 +148,7 @@ def test_iterates_multiplayer_participant_teams() -> None:
 
     repeated_first = next(decoder.iter_teams())
     assert repeated_first == teams[0]
-    assert repeated_first is not teams[0]
+    assert repeated_first is teams[0]
 
 
 def test_iterates_single_player_teams_after_variable_map_tail() -> None:

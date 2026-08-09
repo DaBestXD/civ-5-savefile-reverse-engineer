@@ -117,7 +117,9 @@ def test_city_and_unit_iterators_preserve_semantic_ownership() -> None:
     assert all(city.owner_player_index >= 0 for city in cities)
     assert cities[0].name_key == "TXT_KEY_CITY_NAME_VENEZ"
     assert all(unit.owner_player_index >= 0 for unit in units)
-    assert cities[0] == next(decoder.iter_players()).cities[0]
+    assert cities[0] is next(decoder.iter_cities())
+    assert units[0] is next(decoder.iter_units())
+    assert cities[0] is next(decoder.iter_players()).cities[0]
 
 
 def test_player_iterator_includes_saved_display_names() -> None:
@@ -128,6 +130,7 @@ def test_player_iterator_includes_saved_display_names() -> None:
     assert players[0].player_type is PlayerType.PLAYER
     assert players[3].display_name == "TXT_KEY_CITYSTATE_MEXICO"
     assert players[3].player_type is PlayerType.CITY_STATE
+    assert next(decoder.iter_players()) is players[0]
     assert decoder.player_display_names is decoder.player_display_names
     assert decoder.player_display_names[0] == "Brad, From Algebra"
     assert decoder.player_display_names[22] == "TXT_KEY_CITYSTATE_MEXICO"

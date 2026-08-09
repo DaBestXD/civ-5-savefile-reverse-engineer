@@ -10,6 +10,9 @@ for team in Civ5SaveDecoder("AutoSave.Civ5Save").iter_teams():
     print(team.team_index, team.city_count, team.total_population)
 ```
 
+A successful complete iteration caches the semantic teams. Later calls return
+fresh iterators over the same immutable objects without decoding them again.
+
 The semantic `CvTeam` includes common population, land, victory, route,
 diplomacy, and era state. It omits duplicate IDs, serialization metadata, and
 the detailed hashed arrays intended for format research.

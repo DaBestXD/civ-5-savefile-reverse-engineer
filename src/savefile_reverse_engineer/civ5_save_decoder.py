@@ -25,6 +25,7 @@ from .civ5_header_types import Civ5SaveHeader as RawCiv5SaveHeader
 from .cv_player import iterate_players_from_payload_impl
 from .cv_player_types import CvPlayer as RawCvPlayer
 from .cv_plot import iterate_plots_from_payload_impl, locate_plot_array_end_impl
+from .cv_plot_types import CvPlot as RawCvPlot
 from .cv_team import iterate_teams_from_payload_impl
 from .cv_team_types import CvTeam as RawCvTeam
 from .models import (
@@ -319,16 +320,21 @@ class Civ5SaveDecoder:
     """Decode one stable in-memory snapshot of a supported Civ V save file."""
 
     __slots__: tuple[str, ...] = (
+        "_cities_cache",
         "_header_cache",
         "_payload_cache",
         "_player_display_names_cache",
         "_player_location_cache",
         "_player_slots_cache",
+        "_players_cache",
         "_plot_location_cache",
+        "_plots_cache",
         "_save_bytes",
         "_settings_cache",
         "_summary_cache",
         "_team_location_cache",
+        "_teams_cache",
+        "_units_cache",
     )
 
     _save_bytes: bytes
@@ -338,6 +344,11 @@ class Civ5SaveDecoder:
     _settings_cache: GameSettings | None
     _player_slots_cache: tuple[PlayerSlot, ...] | None
     _player_display_names_cache: Mapping[int, str | None] | None
+    _plots_cache: tuple[CvPlot, ...] | None
+    _teams_cache: tuple[CvTeam, ...] | None
+    _players_cache: tuple[CvPlayer, ...] | None
+    _cities_cache: tuple[CvCity, ...] | None
+    _units_cache: tuple[CvUnit, ...] | None
     _plot_location_cache: _CvPlotLocation | None
     _player_location_cache: _CvPlayerLocation | None
     _team_location_cache: _CvTeamLocation | None
@@ -350,6 +361,11 @@ class Civ5SaveDecoder:
         self._settings_cache = None
         self._player_slots_cache = None
         self._player_display_names_cache = None
+        self._plots_cache = None
+        self._teams_cache = None
+        self._players_cache = None
+        self._cities_cache = None
+        self._units_cache = None
         self._plot_location_cache = None
         self._player_location_cache = None
         self._team_location_cache = None
@@ -415,6 +431,9 @@ class Civ5SaveDecoder:
 
     def iter_plots(self) -> Iterator[CvPlot]:
         """Return a fresh lazy iterator over every plot in the save's CvMap."""
+        plots = self._plots_cache
+        if plots is not None:
+            return iter(plots)
         payload = self.payload_bytes
         location = self._get_plot_location(payload)
         raw_plots = iterate_plots_from_payload_impl(
@@ -423,7 +442,15 @@ class Civ5SaveDecoder:
             width=location.width,
             height=location.height,
         )
-        return (make_plot(plot) for plot in raw_plots)
+        return self._iter_and_cache_plots(raw_plots)
+
+    def _iter_and_cache_plots(self, raw_plots: Iterator[RawCvPlot]) -> Iterator[CvPlot]:
+        plots: list[CvPlot] = []
+        for raw_plot in raw_plots:
+            plot = make_plot(raw_plot)
+            plots.append(plot)
+            yield plot
+        self._plots_cache = tuple(plots)
 
     def _iter_raw_teams(self) -> Iterator[RawCvTeam]:
         payload = self.payload_bytes
@@ -434,16 +461,32 @@ class Civ5SaveDecoder:
 
     def iter_teams(self) -> Iterator[CvTeam]:
         """Return a fresh lazy iterator over participant teams."""
+        teams = self._teams_cache
+        if teams is not None:
+            return iter(teams)
         participant_teams = {
             slot.team_index
             for slot in self.player_slots
             if slot.status in (SlotStatus.TAKEN, SlotStatus.COMPUTER)
         }
-        return (
-            make_team(team)
-            for team in self._iter_raw_teams()
-            if team.team_index in participant_teams
+        return self._iter_and_cache_teams(
+            self._iter_raw_teams(), participant_teams=participant_teams
         )
+
+    def _iter_and_cache_teams(
+        self,
+        raw_teams: Iterator[RawCvTeam],
+        *,
+        participant_teams: set[int],
+    ) -> Iterator[CvTeam]:
+        teams: list[CvTeam] = []
+        for raw_team in raw_teams:
+            if raw_team.team_index not in participant_teams:
+                continue
+            team = make_team(raw_team)
+            teams.append(team)
+            yield team
+        self._teams_cache = tuple(teams)
 
     def _iter_raw_players(self) -> Iterator[RawCvPlayer]:
         payload = self.payload_bytes
@@ -472,22 +515,37 @@ class Civ5SaveDecoder:
 
     def iter_players(self) -> Iterator[CvPlayer]:
         """Return players whose saved slots are human- or computer-controlled."""
+        players = self._players_cache
+        if players is not None:
+            return iter(players)
         participant_slots = {
             slot.player_index: slot
             for slot in self.player_slots
             if slot.status in (SlotStatus.TAKEN, SlotStatus.COMPUTER)
         }
-        return (
-            make_player(
-                player,
-                display_name=_player_display_name(
-                    player, participant_slots[player.player_index]
-                ),
-                player_type=_player_type(participant_slots[player.player_index]),
-            )
-            for player in self._iter_raw_players()
-            if player.player_index in participant_slots
+        return self._iter_and_cache_players(
+            self._iter_raw_players(), participant_slots=participant_slots
         )
+
+    def _iter_and_cache_players(
+        self,
+        raw_players: Iterator[RawCvPlayer],
+        *,
+        participant_slots: Mapping[int, PlayerSlot],
+    ) -> Iterator[CvPlayer]:
+        players: list[CvPlayer] = []
+        for raw_player in raw_players:
+            slot = participant_slots.get(raw_player.player_index)
+            if slot is None:
+                continue
+            player = make_player(
+                raw_player,
+                display_name=_player_display_name(raw_player, slot),
+                player_type=_player_type(slot),
+            )
+            players.append(player)
+            yield player
+        self._players_cache = tuple(players)
 
     @property
     def player_display_names(self) -> Mapping[int, str | None]:
@@ -505,11 +563,33 @@ class Civ5SaveDecoder:
 
     def iter_cities(self) -> Iterator[CvCity]:
         """Return a fresh lazy iterator over participant-owned cities."""
-        return (city for player in self.iter_players() for city in player.cities)
+        cities = self._cities_cache
+        if cities is not None:
+            return iter(cities)
+        return self._iter_and_cache_cities()
+
+    def _iter_and_cache_cities(self) -> Iterator[CvCity]:
+        cities: list[CvCity] = []
+        for player in self.iter_players():
+            for city in player.cities:
+                cities.append(city)
+                yield city
+        self._cities_cache = tuple(cities)
 
     def iter_units(self) -> Iterator[CvUnit]:
         """Return a fresh lazy iterator over participant-owned units."""
-        return (unit for player in self.iter_players() for unit in player.units)
+        units = self._units_cache
+        if units is not None:
+            return iter(units)
+        return self._iter_and_cache_units()
+
+    def _iter_and_cache_units(self) -> Iterator[CvUnit]:
+        units: list[CvUnit] = []
+        for player in self.iter_players():
+            for unit in player.units:
+                units.append(unit)
+                yield unit
+        self._units_cache = tuple(units)
 
 
 __all__ = (

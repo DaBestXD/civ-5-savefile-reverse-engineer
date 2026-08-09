@@ -32,6 +32,10 @@ records. Every returned city and unit carries its `owner_player_index`.
 Each city also provides the saved localization key through `city.name_key`,
 for example `TXT_KEY_CITY_NAME_VENEZ`.
 
+Each semantic `iter_*()` result is cached after its iterator is consumed
+successfully. Later calls return fresh iterators over the same immutable
+objects. A partially consumed or failed iteration is not cached.
+
 `player_display_names` is a cached, read-only mapping from every participating
 player index to the same resolved `display_name` exposed by `iter_players()`.
 Its values can be `None` when the save does not contain enough information to

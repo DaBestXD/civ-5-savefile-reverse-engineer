@@ -17,7 +17,9 @@ hashes are never discarded. Object references use `owner_player_index` and
 
 The iterator validates map dimensions and row-major coordinates. Errors later
 in the payload are raised when iteration reaches them. Consume the iterator
-fully when the entire plot array must be validated.
+fully when the entire plot array must be validated. A successful complete
+iteration caches the semantic plots; later calls iterate over the same
+immutable objects without decoding them again.
 
 ## Exact raw records
 
