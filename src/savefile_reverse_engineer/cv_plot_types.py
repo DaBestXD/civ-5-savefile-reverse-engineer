@@ -191,3 +191,6 @@ class CvPlot:
     unit_references: tuple[ObjectReference, ...]
     continent: int
     archaeology: ArchaeologyData
+
+
+__all__: tuple[str, ...] = ()

@@ -18,10 +18,10 @@ The examined multiplayer saves contain these values. They are fixture evidence,
 not required values for every supported save:
 
 | Field | Examined value |
-|---|---|
+| --- | --- |
 | Game version | `1.0.3.279 (403694)` |
 | Build string | `403694 FINAL_RELEASE` |
-| Pregame game name | `RacismLEKMOD v34.11` |
+| Pregame game name | `[GAME_NAME]` |
 | Map script | `Assets\\Maps\\Lekmap v5.2\\LekmapPangaeaFractalv5.2.lua` |
 | World size | `WORLDSIZE_TINY` |
 | Game speed | `GAMESPEED_QUICK` |
@@ -107,14 +107,14 @@ The formal enabled-mod array is empty in all 61 supplied saves. A nonempty
 array is currently rejected because no matching build-403694 fixture confirms
 its entry layout.
 
-The multiplayer text `RacismLEKMOD v34.11` is not stored in that formal mod
+The multiplayer text `[GAME_NAME]` is not stored in that formal mod
 array. It appears later in the exact position where `CvPreGame::writeArchive`
 writes `s_gameName`. The bytes around it follow this order:
 
 ```text
 deprecated force-control array
 game mode
-game name                  "RacismLEKMOD v34.11"
+game name                  "[GAME_NAME]"
 game speed
 game-started Boolean
 game turn

@@ -62,3 +62,6 @@ class CvCity:
     culture_stored_times_100: int
     culture_level: int
     buildings: CvCityBuildings
+
+
+__all__: tuple[str, ...] = ()

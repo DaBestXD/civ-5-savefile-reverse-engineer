@@ -821,7 +821,7 @@ def _read_compressed_chunks(
     return tuple(chunks)
 
 
-def decode_civ5_save_header_bytes(save_bytes: bytes) -> Civ5SaveHeader:
+def decode_header_bytes_impl(save_bytes: bytes) -> Civ5SaveHeader:
     """Decode a supported physical ``.CIV5SAVE`` header from complete file bytes.
 
     The returned pregame archive can contain passwords and email addresses.
@@ -857,9 +857,7 @@ def decode_civ5_save_header_bytes(save_bytes: bytes) -> Civ5SaveHeader:
     )
 
 
-def decompress_civ5_save_payload_bytes(
-    save_bytes: bytes, header: Civ5SaveHeader
-) -> bytes:
+def decompress_payload_bytes_impl(save_bytes: bytes, header: Civ5SaveHeader) -> bytes:
     """Return the complete decompressed payload from a supported save file.
 
     The input must be the complete physical ``.CIV5SAVE`` file. The physical
@@ -890,3 +888,6 @@ def decompress_civ5_save_payload_bytes(
         )
 
     return payload
+
+
+__all__: tuple[str, ...] = ()

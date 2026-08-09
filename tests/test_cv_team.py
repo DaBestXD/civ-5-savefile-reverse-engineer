@@ -5,8 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from savefile_reverse_engineer import CvTeam, CvTeamDecodeError, RouteType
-from savefile_reverse_engineer.cv_team import decode_cv_team_array_bytes
+from savefile_reverse_engineer.raw import (
+    CvTeam,
+    CvTeamDecodeError,
+    RouteType,
+    decode_team_array_bytes,
+)
 
 _FIXTURE_PATH = Path(__file__).parent / "test_data/cv_team/turn_76_team_array.bin"
 _FIXTURE_BYTES = _FIXTURE_PATH.read_bytes()
@@ -20,7 +24,7 @@ def _replace_unsigned(data: bytes, offset: int, size: int, value: int) -> bytes:
 
 
 def _consume(data: bytes) -> tuple[CvTeam, ...]:
-    return tuple(decode_cv_team_array_bytes(data))
+    return tuple(decode_team_array_bytes(data))
 
 
 def test_turn_76_fixture_decodes_completely() -> None:
@@ -60,7 +64,7 @@ def test_decodes_fixed_fields_relationships_and_technologies() -> None:
 
 
 def test_decodes_hashed_arrays_project_art_and_yields() -> None:
-    team = next(decode_cv_team_array_bytes(_FIXTURE_BYTES))
+    team = next(decode_team_array_bytes(_FIXTURE_BYTES))
 
     assert len(team.vote_source_eligibility_counts) == 2
     assert [entry.type.name for entry in team.vote_source_eligibility_counts] == [
@@ -92,7 +96,7 @@ def test_decodes_hashed_arrays_project_art_and_yields() -> None:
 def test_preserves_unknown_hash_and_decodes_variable_revealed_resources() -> None:
     unknown_hash = 0x12345678
     unknown_victory = _replace_unsigned(_FIXTURE_BYTES, 0x840, 4, unknown_hash)
-    team = next(decode_cv_team_array_bytes(unknown_victory))
+    team = next(decode_team_array_bytes(unknown_victory))
     assert team.can_launch_victories[0].type.hash_value == unknown_hash
     assert team.can_launch_victories[0].type.name is None
 
@@ -108,7 +112,9 @@ def test_preserves_unknown_hash_and_decodes_variable_revealed_resources() -> Non
 
 def test_decodes_variable_project_art() -> None:
     first = _replace_unsigned(_FIXTURE_BYTES[:_TEAM_LENGTH], 0xACC, 4, 1)
-    first = first[:0xB34] + (7).to_bytes(4, byteorder="little", signed=True) + first[0xB34:]
+    first = (
+        first[:0xB34] + (7).to_bytes(4, byteorder="little", signed=True) + first[0xB34:]
+    )
     teams = _consume(first + _FIXTURE_BYTES[_TEAM_LENGTH:])
 
     assert teams[0].byte_length == _TEAM_LENGTH + 4
@@ -117,7 +123,7 @@ def test_decodes_variable_project_art() -> None:
 
 def test_iterator_is_lazy_after_first_record() -> None:
     data = _FIXTURE_BYTES[:_TEAM_LENGTH] + b"\0\0\0\0"
-    iterator: Iterator[CvTeam] = decode_cv_team_array_bytes(data)
+    iterator: Iterator[CvTeam] = decode_team_array_bytes(data)
 
     assert next(iterator).team_id == 0
     with pytest.raises(CvTeamDecodeError):
@@ -126,7 +132,7 @@ def test_iterator_is_lazy_after_first_record() -> None:
 
 def test_rejects_empty_truncated_and_trailing_input() -> None:
     with pytest.raises(CvTeamDecodeError, match="empty"):
-        _ = decode_cv_team_array_bytes(b"")
+        _ = decode_team_array_bytes(b"")
     with pytest.raises(CvTeamDecodeError, match="truncated"):
         _ = _consume(_FIXTURE_BYTES[:100])
     with pytest.raises(CvTeamDecodeError, match="trailing bytes"):
@@ -140,27 +146,23 @@ def test_rejects_invalid_version_boolean_team_id_and_count() -> None:
     invalid_count = _replace_unsigned(_FIXTURE_BYTES, 0x83C, 4, 7)
 
     with pytest.raises(CvTeamDecodeError, match="CvTeam version"):
-        _ = next(decode_cv_team_array_bytes(invalid_version))
+        _ = next(decode_team_array_bytes(invalid_version))
     with pytest.raises(CvTeamDecodeError, match="Boolean"):
-        _ = next(decode_cv_team_array_bytes(invalid_boolean))
+        _ = next(decode_team_array_bytes(invalid_boolean))
     with pytest.raises(CvTeamDecodeError, match="team ID"):
-        _ = next(decode_cv_team_array_bytes(invalid_team_id))
+        _ = next(decode_team_array_bytes(invalid_team_id))
     with pytest.raises(CvTeamDecodeError, match="expected 6"):
-        _ = next(decode_cv_team_array_bytes(invalid_count))
+        _ = next(decode_team_array_bytes(invalid_count))
 
 
 def test_rejects_unsafe_variable_counts() -> None:
-    revealed_count = _replace_unsigned(
-        _FIXTURE_BYTES, 0x3420, 4, 0xFFFFFFFF
-    )
+    revealed_count = _replace_unsigned(_FIXTURE_BYTES, 0x3420, 4, 0xFFFFFFFF)
     project_art_count = _replace_unsigned(_FIXTURE_BYTES, 0xB2C, 4, 7)
-    negative_project_count = _replace_unsigned(
-        _FIXTURE_BYTES, 0xACC, 4, 0xFFFFFFFF
-    )
+    negative_project_count = _replace_unsigned(_FIXTURE_BYTES, 0xACC, 4, 0xFFFFFFFF)
 
     with pytest.raises(CvTeamDecodeError, match="revealed_resources.count"):
-        _ = next(decode_cv_team_array_bytes(revealed_count))
+        _ = next(decode_team_array_bytes(revealed_count))
     with pytest.raises(CvTeamDecodeError, match="project_art_types.count"):
-        _ = next(decode_cv_team_array_bytes(project_art_count))
+        _ = next(decode_team_array_bytes(project_art_count))
     with pytest.raises(CvTeamDecodeError, match="nonnegative"):
-        _ = next(decode_cv_team_array_bytes(negative_project_count))
+        _ = next(decode_team_array_bytes(negative_project_count))

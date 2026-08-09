@@ -141,10 +141,9 @@ class CvTeam:
     last_technology: HashedType | None
     technologies: tuple[TeamTechnology, ...]
     improvement_yield_changes: tuple[HashedValue[TeamYieldChanges], ...]
-    no_fresh_water_improvement_yield_changes: tuple[
-        HashedValue[TeamYieldChanges], ...
-    ]
-    fresh_water_improvement_yield_changes: tuple[
-        HashedValue[TeamYieldChanges], ...
-    ]
+    no_fresh_water_improvement_yield_changes: tuple[HashedValue[TeamYieldChanges], ...]
+    fresh_water_improvement_yield_changes: tuple[HashedValue[TeamYieldChanges], ...]
     revealed_resources: tuple[HashedType, ...]
+
+
+__all__: tuple[str, ...] = ()

@@ -478,7 +478,7 @@ def _iterate_cv_plot_array(plot_array_bytes: bytes) -> Iterator[CvPlot]:
         )
 
 
-def decode_cv_plot_array_bytes(plot_array_bytes: bytes) -> Iterator[CvPlot]:
+def decode_plot_array_bytes_impl(plot_array_bytes: bytes) -> Iterator[CvPlot]:
     """Return a lazy iterator over a complete serialized CvPlot array.
 
     The input must start with plot ``(0, 0)`` and end immediately after the
@@ -491,7 +491,7 @@ def decode_cv_plot_array_bytes(plot_array_bytes: bytes) -> Iterator[CvPlot]:
     return _iterate_cv_plot_array(plot_array_bytes)
 
 
-def iterate_cv_plots_from_payload(
+def iterate_plots_from_payload_impl(
     payload: bytes, *, byte_offset: int, width: int, height: int
 ) -> Iterator[CvPlot]:
     """Yield a known-size CvPlot array from a decompressed save payload."""
@@ -506,7 +506,7 @@ def iterate_cv_plots_from_payload(
         yield plot
 
 
-def locate_cv_plot_array_end(
+def locate_plot_array_end_impl(
     payload: bytes, *, byte_offset: int, width: int, height: int
 ) -> int:
     """Return the offset immediately after a known-size payload plot array."""
@@ -517,3 +517,6 @@ def locate_cv_plot_array_end(
         plot = _read_plot(reader)
         _ = _validate_coordinates(reader, plot, plot_index, width)
     return reader.offset
+
+
+__all__: tuple[str, ...] = ()

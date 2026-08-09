@@ -47,3 +47,6 @@ class CvPlayer:
     happiness: int
     cities: SerializedFreeList[CvCity]
     units: SerializedFreeList[CvUnit]
+
+
+__all__: tuple[str, ...] = ()

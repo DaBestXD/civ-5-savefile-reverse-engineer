@@ -187,12 +187,13 @@ def _has_plausible_player_prefix(data: bytes, offset: int, limit: int) -> bool:
     starting_x = _i32(data, offset + 4)
     starting_y = _i32(data, offset + 8)
     coordinates_are_valid = (
-        starting_x == _INVALID_PLOT_COORD
-        and starting_y == _INVALID_PLOT_COORD
+        starting_x == _INVALID_PLOT_COORD and starting_y == _INVALID_PLOT_COORD
     ) or (0 <= starting_x < 512 and 0 <= starting_y < 512)
     population = _i32(data, offset + 12)
     land = _i32(data, offset + 16)
-    return coordinates_are_valid and 0 <= population < 1_000_000 and 0 <= land < 1_000_000
+    return (
+        coordinates_are_valid and 0 <= population < 1_000_000 and 0 <= land < 1_000_000
+    )
 
 
 def _locate_player_records(
@@ -316,9 +317,7 @@ def _find_player_starts_by_structure(
     candidate_offsets = tuple(candidates)
 
     def header_count(start: int, end: int) -> int:
-        return bisect_left(header_offsets, end) - bisect_right(
-            header_offsets, start
-        )
+        return bisect_left(header_offsets, end) - bisect_right(header_offsets, start)
 
     @cache
     def find_path(
@@ -337,13 +336,9 @@ def _find_player_starts_by_structure(
                 previous_third.offset + previous_third.byte_length
             )
             final_end = (
-                final_third.offset
-                + final_third.byte_length
-                + previous_tail_length
+                final_third.offset + final_third.byte_length + previous_tail_length
             )
-            if final_end > len(data) or (
-                require_exact_end and final_end != len(data)
-            ):
+            if final_end > len(data) or (require_exact_end and final_end != len(data)):
                 return None
             return (current,)
 
@@ -371,9 +366,7 @@ def _find_player_starts_by_structure(
     return path
 
 
-def _skip_exact_int_vector(
-    reader: _Reader, *, count: int, field: str
-) -> None:
+def _skip_exact_int_vector(reader: _Reader, *, count: int, field: str) -> None:
     count_offset = reader.offset
     saved_count = reader.u32(f"{field}.count")
     if saved_count != count:
@@ -385,9 +378,7 @@ def _skip_exact_int_vector(
     _ = reader.read_bytes(count * 4, f"{field}.values")
 
 
-def _skip_exact_bool_vector(
-    reader: _Reader, *, count: int, field: str
-) -> None:
+def _skip_exact_bool_vector(reader: _Reader, *, count: int, field: str) -> None:
     count_offset = reader.offset
     saved_count = reader.u32(f"{field}.count")
     if saved_count != count:
@@ -400,9 +391,7 @@ def _skip_exact_bool_vector(
         _ = reader.read_bool(f"{field}[{index}]")
 
 
-def _skip_exact_hashed_int_array(
-    reader: _Reader, *, count: int, field: str
-) -> None:
+def _skip_exact_hashed_int_array(reader: _Reader, *, count: int, field: str) -> None:
     count_offset = reader.offset
     saved_count = reader.u32(f"{field}.count")
     if saved_count != count:
@@ -599,9 +588,7 @@ def _find_unit_starts(
     return tuple(starts)
 
 
-def _read_building_array(
-    reader: _Reader, *, field: str
-) -> tuple[_HashedIntEntry, ...]:
+def _read_building_array(reader: _Reader, *, field: str) -> tuple[_HashedIntEntry, ...]:
     count_offset = reader.offset
     count = reader.i32(f"{field}.count")
     if count != _CITY_BUILDING_TYPE_COUNT:
@@ -614,11 +601,7 @@ def _read_building_array(
     for index in range(count):
         hash_offset = reader.offset
         hash_value = reader.u32(f"{field}[{index}].type")
-        value = (
-            None
-            if hash_value == 0
-            else reader.i32(f"{field}[{index}].value")
-        )
+        value = None if hash_value == 0 else reader.i32(f"{field}[{index}].value")
         entries.append(
             _HashedIntEntry(
                 hash_value=hash_value,
@@ -649,23 +632,13 @@ def _read_city_buildings(
     num_buildings = reader.i32(f"{field}.num_buildings")
     production_modifier = reader.i32(f"{field}.production_modifier")
     defense = reader.i32(f"{field}.defense")
-    garrison_strength_bonus = reader.i32(
-        f"{field}.garrison_strength_bonus"
-    )
+    garrison_strength_bonus = reader.i32(f"{field}.garrison_strength_bonus")
     defense_per_citizen = reader.i32(f"{field}.defense_per_citizen")
     defense_modifier = reader.i32(f"{field}.defense_modifier")
-    missionary_extra_spreads = reader.i32(
-        f"{field}.missionary_extra_spreads"
-    )
-    landmarks_tourism_percent = reader.i32(
-        f"{field}.landmarks_tourism_percent"
-    )
-    great_works_tourism_modifier = reader.i32(
-        f"{field}.great_works_tourism_modifier"
-    )
-    sold_building_this_turn = reader.read_bool(
-        f"{field}.sold_building_this_turn"
-    )
+    missionary_extra_spreads = reader.i32(f"{field}.missionary_extra_spreads")
+    landmarks_tourism_percent = reader.i32(f"{field}.landmarks_tourism_percent")
+    great_works_tourism_modifier = reader.i32(f"{field}.great_works_tourism_modifier")
+    sold_building_this_turn = reader.read_bool(f"{field}.sold_building_this_turn")
     arrays = tuple(
         _read_building_array(reader, field=f"{field}.{array_name}")
         for array_name in (
@@ -684,10 +657,7 @@ def _read_city_buildings(
                 reader.fail(
                     "building hash does not match the first inventory array",
                     offset=entry.hash_offset,
-                    field=(
-                        f"{field}.arrays[{array_index}]"
-                        f"[{entry_index}].type"
-                    ),
+                    field=(f"{field}.arrays[{array_index}][{entry_index}].type"),
                 )
     if reader.offset > end:
         reader.fail(
@@ -777,12 +747,8 @@ def _read_city(
         highest_population=reader.i32(f"{field}.highest_population"),
         great_people_created=reader.i32(f"{field}.great_people_created"),
         base_great_people_rate=reader.i32(f"{field}.base_great_people_rate"),
-        great_people_rate_modifier=reader.i32(
-            f"{field}.great_people_rate_modifier"
-        ),
-        culture_stored_times_100=reader.i32(
-            f"{field}.culture_stored_times_100"
-        ),
+        great_people_rate_modifier=reader.i32(f"{field}.great_people_rate_modifier"),
+        culture_stored_times_100=reader.i32(f"{field}.culture_stored_times_100"),
         culture_level=reader.i32(f"{field}.culture_level"),
         buildings=buildings,
     )
@@ -945,7 +911,7 @@ def _read_player(
     )
 
 
-def iterate_cv_players_from_payload(
+def iterate_players_from_payload_impl(
     payload: bytes,
     *,
     byte_offset: int,
@@ -963,17 +929,7 @@ def iterate_cv_players_from_payload(
         )
 
 
-def locate_cv_player_array_end(
-    payload: bytes,
-    *,
-    byte_offset: int,
-    expected_totals: Sequence[tuple[int, int]] | None = None,
-) -> int:
-    """Return the first byte after the structurally bounded player array."""
-    return _locate_player_records(payload, byte_offset, expected_totals)[-1][1]
-
-
-def decode_cv_player_array_bytes(
+def decode_player_array_bytes_impl(
     player_array_bytes: bytes,
 ) -> Iterator[CvPlayer]:
     """Return a lazy iterator over an exact 64-player byte sequence."""
@@ -984,9 +940,7 @@ def decode_cv_player_array_bytes(
             player_index=0,
             field="player_array",
         )
-    records = _locate_player_records(
-        player_array_bytes, 0, require_exact_end=True
-    )
+    records = _locate_player_records(player_array_bytes, 0, require_exact_end=True)
     array_end = records[-1][1]
     if array_end != len(player_array_bytes):
         raise CvPlayerDecodeError(
@@ -1005,3 +959,6 @@ def decode_cv_player_array_bytes(
         )
         for player_index, (start, end, headers) in enumerate(records)
     )
+
+
+__all__: tuple[str, ...] = ()

@@ -1,6 +1,6 @@
 [project]
 name = "civ5-savefile-reverse-engineer"
-version = "0.1.0"
+version = "0.2.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -11,12 +11,7 @@ requires = ["uv_build>=0.11.9,<0.12.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = [
-    "basedpyright>=1.39.9",
-    "pytest>=9.1.1",
-    "ruff>=0.16.1",
-    "ty>=0.0.66",
-]
+dev = ["basedpyright>=1.39.9", "pytest>=9.1.1", "ruff>=0.16.1", "ty>=0.0.69"]
 
 [tool.basedpyright]
 include = ["src", "tests"]

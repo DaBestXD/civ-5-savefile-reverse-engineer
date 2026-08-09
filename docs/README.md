@@ -1,21 +1,20 @@
 # Documentation
 
-The documentation is split into API guides and byte-layout references. Use the
-API guides when writing Python code. Use the format references when studying or
-extending the save parser.
+The documentation is split into semantic API guides and byte-layout references.
+Use the API guides for normal game-state access. Use the raw namespace and
+format references when studying or extending the parser.
 
 ## Suggested reading order
 
-1. [Complete save and payload layout](byte-layout.md) explains the physical
-   container and the top-level decompressed structure.
-2. [Physical header format](civ5-header-format.md) documents the uncompressed
-   header and how the compressed-data boundary is found.
-3. Read the guide for the decoder you need:
-   - [Header and payload API](civ5-header-decoder.md)
+1. Read the guide for the data you need:
+   - [Save summary, settings, and payload API](civ5-header-decoder.md)
    - [`CvPlot` API](cv-plot-decoder.md)
    - [`CvTeam` API](cv-team-decoder.md)
-   - [`CvPlayer` API](cv-player-decoder.md)
-4. For byte-level details, use the matching format reference:
+   - [Player, city, and unit API](cv-player-decoder.md)
+2. For byte-level details, start with the
+   [complete save and payload layout](byte-layout.md), then use the matching
+   format reference:
+   - [Physical header format](civ5-header-format.md)
    - [`CvMap` and `CvPlot` byte layout](map-information.md)
    - [`CvTeam` byte layout](team-information.md)
    - [`CvPlayer`, `CvCity`, and `CvUnit` byte layout](player-information.md)

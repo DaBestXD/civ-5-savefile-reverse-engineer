@@ -6,7 +6,6 @@ record layouts have one canonical home and are linked from each section.
 The main evidence is 54 sequential Lekmod v34.11 multiplayer saves and one
 single-player comparison save. The multiplayer headers identify Civilization V
 build `1.0.3.279 (403694)`, Lekmap v5.2, and the game name
-`RacismLEKMOD v34.11`.
 
 All confirmed integers are little-endian. Offsets written as `+0xNN` are
 relative to the containing record. Other offsets are relative to the start of

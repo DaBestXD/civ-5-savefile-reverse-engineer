@@ -6,24 +6,24 @@ import pytest
 
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
-    CvCityBuildings,
     CvPlayerDecodeError,
 )
 from savefile_reverse_engineer._cv_plot_hashes import firaxis_hash
 from savefile_reverse_engineer.cv_player import (
     _read_city_buildings,  # pyright: ignore[reportPrivateUsage]
-    decode_cv_player_array_bytes,
-    iterate_cv_players_from_payload,
+    iterate_players_from_payload_impl,
+)
+from savefile_reverse_engineer.raw import (
+    CvCityBuildings,
+    decode_player_array_bytes,
 )
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SAVE_PATH = (
-    _PROJECT_ROOT
-    / "test-save-file/multi-player/AutoSave_Post_0076 AD-0040.Civ5Save"
+    _PROJECT_ROOT / "test-save-file/multi-player/AutoSave_Post_0076 AD-0040.Civ5Save"
 )
 _EARLY_SAVE_PATH = (
-    _PROJECT_ROOT
-    / "test-save-file/multi-player/AutoSave_Post_0027 BC-2380.Civ5Save"
+    _PROJECT_ROOT / "test-save-file/multi-player/AutoSave_Post_0027 BC-2380.Civ5Save"
 )
 _UNKNOWN_BUILDING_HASH = 0x12345678
 _BUILDING_TYPE_COUNT = 268
@@ -38,28 +38,36 @@ _requires_early_save = pytest.mark.skipif(
 
 
 @_requires_save
-def test_decodes_all_players_and_nested_free_lists() -> None:
-    players = tuple(Civ5SaveDecoder(_SAVE_PATH).iter_cv_players())
+def test_decodes_participant_players_and_nested_objects() -> None:
+    players = tuple(Civ5SaveDecoder(_SAVE_PATH).iter_players())
 
-    assert len(players) == 64
-    assert players[0].byte_offset == 0x42513D
+    assert [player.player_index for player in players] == [
+        0,
+        1,
+        2,
+        22,
+        23,
+        24,
+        25,
+        63,
+    ]
     assert players[0].total_population == 44
     assert players[0].total_land == 56
-    assert players[0].culture_times_100 == 23_000
+    assert players[0].culture_x100 == 23_000
     assert players[0].faith == 62
-    assert len(players[0].cities.entries) == 4
-    assert len(players[0].units.entries) == 16
-    assert players[3].cities.entries == ()
-    assert players[3].units.entries == ()
+    assert len(players[0].cities) == 4
+    assert len(players[0].units) == 16
+    assert players[-1].cities == ()
+    assert players[-1].units == ()
 
 
 @_requires_save
-def test_decodes_city_prefixes_and_free_list_slots() -> None:
-    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_cv_players())
-    cities = player.cities.entries
+def test_decodes_semantic_city_fields_and_ownership() -> None:
+    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    cities = player.cities
 
-    assert [city.slot_index for city in cities] == [0, 1, 2, 3]
     assert [city.city_id for city in cities] == [8192, 16385, 24578, 32771]
+    assert {city.owner_player_index for city in cities} == {0}
     assert [(city.x, city.y) for city in cities] == [
         (11, 16),
         (16, 14),
@@ -68,95 +76,68 @@ def test_decodes_city_prefixes_and_free_list_slots() -> None:
     ]
     assert [city.population for city in cities] == [16, 9, 10, 9]
     assert sum(city.population for city in cities) == player.total_population
-    assert player.cities.slot_count == 8
-    assert player.cities.free_count == 0
 
 
 @_requires_save
 def test_decodes_city_building_inventory_and_production() -> None:
-    cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_cv_players()).cities.entries
+    cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
 
     second_city_by_name = {
-        entry.building.name: entry for entry in cities[1].buildings.entries
+        entry.building_type.key: entry for entry in cities[1].buildings
     }
-    capital_by_name = {
-        entry.building.name: entry for entry in cities[0].buildings.entries
-    }
+    capital_by_name = {entry.building_type.key: entry for entry in cities[0].buildings}
 
-    assert len(cities[1].buildings.entries) == _BUILDING_TYPE_COUNT
-    assert cities[1].buildings.version == 1
+    assert len(cities[1].buildings) == _BUILDING_TYPE_COUNT - 4
+    assert all(state.building_type.hash_value != 0 for state in cities[1].buildings)
     assert second_city_by_name["BUILDING_LIBRARY"].real_count == 1
     assert second_city_by_name["BUILDING_LIBRARY"].free_count == 0
     assert second_city_by_name["BUILDING_GRANARY"].real_count == 1
-    assert (
-        capital_by_name["BUILDING_GREAT_LIGHTHOUSE"].production_times_100
-        == 7081
-    )
+    assert capital_by_name["BUILDING_GREAT_LIGHTHOUSE"].production_x100 == 7081
 
 
 @_requires_early_save
 def test_writer_guided_city_probe_rejects_false_prefix_markers() -> None:
-    cities = next(
-        Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_cv_players()
-    ).cities.entries
+    cities = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players()).cities
 
     assert [city.city_id for city in cities] == [8192, 16385]
     assert [(city.x, city.y) for city in cities] == [(11, 16), (16, 14)]
-    assert all(len(city.buildings.entries) == _BUILDING_TYPE_COUNT for city in cities)
+    assert all(len(city.buildings) == _BUILDING_TYPE_COUNT - 4 for city in cities)
 
 
 @_requires_save
 def test_decodes_unit_ids_coordinates_and_deleted_slots() -> None:
-    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_cv_players())
-    units = player.units.entries
+    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    units = player.units
 
     assert units[0].unit_id == 57344
     assert units[0].unit_type_index == 1
     assert (units[0].x, units[0].y) == (12, 15)
-    assert [unit.slot_index for unit in units] == [
-        0,
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-        7,
-        8,
-        9,
-        10,
-        11,
-        12,
-        13,
-        15,
-        16,
-    ]
-    assert player.units.free_count == 1
-    assert player.units.free_list_head == 14
+    assert len(units) == 16
+    assert {unit.owner_player_index for unit in units} == {0}
 
 
 @_requires_save
 def test_returns_fresh_nested_results() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    first = next(decoder.iter_cv_players())
-    repeated = next(decoder.iter_cv_players())
+    first = next(decoder.iter_players())
+    repeated = next(decoder.iter_players())
 
     assert repeated == first
     assert repeated is not first
-    assert repeated.cities.entries[0] is not first.cities.entries[0]
+    assert repeated.cities[0] is not first.cities[0]
 
 
 @_requires_save
 def test_nested_errors_keep_absolute_player_context() -> None:
     source = Civ5SaveDecoder(_SAVE_PATH)
-    payload = bytearray(source.decompress_payload())
-    payload[0x44F557 : 0x44F55B] = (7).to_bytes(4, "little")
+    payload = bytearray(source.payload_bytes)
+    payload[0x44F557:0x44F55B] = (7).to_bytes(4, "little")
 
-    teams = tuple(source.iter_cv_teams())
-    expected_totals = tuple(
-        (team.total_population, team.total_land) for team in teams
+    teams = tuple(
+        source._iter_raw_teams()  # pyright: ignore[reportPrivateUsage]
     )
-    players = iterate_cv_players_from_payload(
+    expected_totals = tuple((team.total_population, team.total_land) for team in teams)
+    players = iterate_players_from_payload_impl(
         bytes(payload), byte_offset=0x42513D, expected_totals=expected_totals
     )
     with pytest.raises(CvPlayerDecodeError) as raised:
@@ -205,9 +186,7 @@ def _utf8(value: str) -> bytes:
     return len(encoded).to_bytes(4, "little") + encoded
 
 
-def _hashed_int_array(
-    hashes: tuple[int, ...], values: tuple[int | None, ...]
-) -> bytes:
+def _hashed_int_array(hashes: tuple[int, ...], values: tuple[int | None, ...]) -> bytes:
     encoded = bytearray(len(hashes).to_bytes(4, "little", signed=True))
     for hash_value, value in zip(hashes, values, strict=True):
         encoded.extend(hash_value.to_bytes(4, "little"))
@@ -237,8 +216,7 @@ def _values_with(
     default: int | None, replacements: dict[int, int | None]
 ) -> tuple[int | None, ...]:
     return tuple(
-        replacements.get(index, default)
-        for index in range(_BUILDING_TYPE_COUNT)
+        replacements.get(index, default) for index in range(_BUILDING_TYPE_COUNT)
     )
 
 
@@ -253,15 +231,11 @@ def _synthetic_city_buildings() -> bytes:
         _values_with(0, {0: 1, 3: None}),
         _values_with(0, {1: 1, 3: None}),
     )
-    return header + b"".join(
-        _hashed_int_array(hashes, values) for values in arrays
-    )
+    return header + b"".join(_hashed_int_array(hashes, values) for values in arrays)
 
 
 def _synthetic_city_prefix_to_buildings() -> bytes:
-    city_prefix = _i32_values(
-        (6, 8192, 2, 3, -1, -1, 10, 10, 7, 7, 0, 0, 0, 250, 1)
-    )
+    city_prefix = _i32_values((6, 8192, 2, 3, -1, -1, 10, 10, 7, 7, 0, 0, 0, 250, 1))
     return b"".join(
         (
             city_prefix,
@@ -302,10 +276,7 @@ def _synthetic_player_record(*, has_objects: bool) -> bytes:
     if has_objects:
         unit_values = (9, 0, 0, 1, 3, 4, 8192)
         record.extend(
-            b"".join(
-                value.to_bytes(4, "little", signed=True)
-                for value in unit_values
-            )
+            b"".join(value.to_bytes(4, "little", signed=True) for value in unit_values)
         )
     record.extend(_free_list_header(live=False))
     record.extend(bytes(0x20000 - len(record)))
@@ -322,11 +293,9 @@ def synthetic_player_array() -> bytes:
 def test_bytes_only_decoder_uses_exact_structural_path(
     synthetic_player_array: bytes,
 ) -> None:
-    players = tuple(decode_cv_player_array_bytes(synthetic_player_array))
+    players = tuple(decode_player_array_bytes(synthetic_player_array))
     buildings = players[0].cities.entries[0].buildings
-    entries_by_hash = {
-        entry.building.hash_value: entry for entry in buildings.entries
-    }
+    entries_by_hash = {entry.building.hash_value: entry for entry in buildings.entries}
 
     assert len(players) == 64
     assert players[0].cities.entries[0].population == 7
@@ -346,7 +315,7 @@ def test_bytes_only_decoder_rejects_trailing_data(
     synthetic_player_array: bytes,
 ) -> None:
     with pytest.raises(CvPlayerDecodeError, match="no complete 64-player path"):
-        _ = tuple(decode_cv_player_array_bytes(synthetic_player_array + b"extra"))
+        _ = tuple(decode_player_array_bytes(synthetic_player_array + b"extra"))
 
 
 def _building_array_starts(data: bytes | bytearray) -> tuple[int, ...]:

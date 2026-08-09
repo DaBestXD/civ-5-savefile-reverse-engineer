@@ -135,23 +135,15 @@ def _read_hashed_bools(
 def _read_flags(reader: _Reader) -> TeamFlags:
     return TeamFlags(
         map_centering=reader.read_bool("flags.map_centering"),
-        has_broken_peace_treaty=reader.read_bool(
-            "flags.has_broken_peace_treaty"
-        ),
+        has_broken_peace_treaty=reader.read_bool("flags.has_broken_peace_treaty"),
         home_of_united_nations=reader.read_bool("flags.home_of_united_nations"),
         has_technology_for_world_congress=reader.read_bool(
             "flags.has_technology_for_world_congress"
         ),
-        broken_military_promise=reader.read_bool(
-            "flags.broken_military_promise"
-        ),
-        broken_expansion_promise=reader.read_bool(
-            "flags.broken_expansion_promise"
-        ),
+        broken_military_promise=reader.read_bool("flags.broken_military_promise"),
+        broken_expansion_promise=reader.read_bool("flags.broken_expansion_promise"),
         broken_border_promise=reader.read_bool("flags.broken_border_promise"),
-        broken_city_state_promise=reader.read_bool(
-            "flags.broken_city_state_promise"
-        ),
+        broken_city_state_promise=reader.read_bool("flags.broken_city_state_promise"),
     )
 
 
@@ -225,17 +217,11 @@ def _read_technologies(
         reader.u32(f"technologies[{index}].technology") for index in range(count)
     )
     has_technology = _read_bools(reader, count, "technologies.has_technology")
-    obtained_by_human = _read_bools(
-        reader, count, "technologies.obtained_by_human"
-    )
-    obtained_for_league = _read_bools(
-        reader, count, "technologies.obtained_for_league"
-    )
+    obtained_by_human = _read_bools(reader, count, "technologies.obtained_by_human")
+    obtained_for_league = _read_bools(reader, count, "technologies.obtained_for_league")
     cannot_trade = _read_bools(reader, count, "technologies.cannot_trade")
     research_progress = _read_ints(reader, count, "technologies.research_progress")
-    acquisition_counts = _read_ints(
-        reader, count, "technologies.acquisition_count"
-    )
+    acquisition_counts = _read_ints(reader, count, "technologies.acquisition_count")
     technologies = tuple(
         TeamTechnology(
             technology=_resolve_hash(hashes[index]),
@@ -326,13 +312,9 @@ def _read_team(reader: _Reader, team_index: int) -> CvTeam:
     embassy_trading_count = reader.i32("embassy_trading_count")
     open_border_trading_count = reader.i32("open_border_trading_count")
     defensive_pact_trading_count = reader.i32("defensive_pact_trading_count")
-    research_agreement_trading_count = reader.i32(
-        "research_agreement_trading_count"
-    )
+    research_agreement_trading_count = reader.i32("research_agreement_trading_count")
     trade_agreement_trading_count = reader.i32("trade_agreement_trading_count")
-    permanent_alliance_trading_count = reader.i32(
-        "permanent_alliance_trading_count"
-    )
+    permanent_alliance_trading_count = reader.i32("permanent_alliance_trading_count")
     bridge_building_count = reader.i32("bridge_building_count")
     water_working_count = reader.i32("water_working_count")
     river_trading_count = reader.i32("river_trading_count")
@@ -361,40 +343,24 @@ def _read_team(reader: _Reader, team_index: int) -> CvTeam:
         reader, _TEAM_COUNT, "technology_sharing_counts"
     )
     turns_at_war = _read_ints(reader, _TEAM_COUNT, "turns_at_war")
-    turns_locked_into_war = _read_ints(
-        reader, _TEAM_COUNT, "turns_locked_into_war"
-    )
-    extra_domain_movement = _read_ints(
-        reader, _DOMAIN_COUNT, "extra_domain_movement"
-    )
+    turns_locked_into_war = _read_ints(reader, _TEAM_COUNT, "turns_locked_into_war")
+    extra_domain_movement = _read_ints(reader, _DOMAIN_COUNT, "extra_domain_movement")
     vote_source_eligibility_counts = _read_hashed_ints(
         reader,
         expected_count=_VOTE_SOURCE_COUNT,
         field="vote_source_eligibility_counts",
     )
     turns_peace_made = _read_ints(reader, _TEAM_COUNT, "turns_peace_made")
-    ignore_warning_counts = _read_ints(
-        reader, _TEAM_COUNT, "ignore_warning_counts"
-    )
+    ignore_warning_counts = _read_ints(reader, _TEAM_COUNT, "ignore_warning_counts")
     has_met = _read_bools(reader, _TEAM_COUNT, "has_met")
-    has_found_territory = _read_bools(
-        reader, _TEAM_COUNT, "has_found_territory"
-    )
+    has_found_territory = _read_bools(reader, _TEAM_COUNT, "has_found_territory")
     at_war = _read_bools(reader, _TEAM_COUNT, "at_war")
-    permanent_war_or_peace = _read_bools(
-        reader, _TEAM_COUNT, "permanent_war_or_peace"
-    )
+    permanent_war_or_peace = _read_bools(reader, _TEAM_COUNT, "permanent_war_or_peace")
     has_embassy = _read_bools(reader, _TEAM_COUNT, "has_embassy")
     has_open_borders = _read_bools(reader, _TEAM_COUNT, "has_open_borders")
-    has_defensive_pact = _read_bools(
-        reader, _TEAM_COUNT, "has_defensive_pact"
-    )
-    has_research_agreement = _read_bools(
-        reader, _TEAM_COUNT, "has_research_agreement"
-    )
-    has_trade_agreement = _read_bools(
-        reader, _TEAM_COUNT, "has_trade_agreement"
-    )
+    has_defensive_pact = _read_bools(reader, _TEAM_COUNT, "has_defensive_pact")
+    has_research_agreement = _read_bools(reader, _TEAM_COUNT, "has_research_agreement")
+    has_trade_agreement = _read_bools(reader, _TEAM_COUNT, "has_trade_agreement")
     force_peace = _read_bools(reader, _TEAM_COUNT, "force_peace")
 
     can_launch_victories = _read_hashed_bools(
@@ -545,9 +511,7 @@ def _read_team(reader: _Reader, team_index: int) -> CvTeam:
         no_fresh_water_improvement_yield_changes=(
             no_fresh_water_improvement_yield_changes
         ),
-        fresh_water_improvement_yield_changes=(
-            fresh_water_improvement_yield_changes
-        ),
+        fresh_water_improvement_yield_changes=(fresh_water_improvement_yield_changes),
         revealed_resources=revealed_resources,
     )
 
@@ -563,14 +527,14 @@ def _iterate_cv_team_array(team_array_bytes: bytes) -> Iterator[CvTeam]:
         )
 
 
-def decode_cv_team_array_bytes(team_array_bytes: bytes) -> Iterator[CvTeam]:
+def decode_team_array_bytes_impl(team_array_bytes: bytes) -> Iterator[CvTeam]:
     """Return a lazy iterator over a complete serialized 64-team array."""
     if not team_array_bytes:
         raise CvTeamDecodeError("the CvTeam array is empty", offset=0, team_index=0)
     return _iterate_cv_team_array(team_array_bytes)
 
 
-def iterate_cv_teams_from_payload(
+def iterate_teams_from_payload_impl(
     payload: bytes, *, byte_offset: int
 ) -> Iterator[CvTeam]:
     """Yield the 64 CvTeam records at a known decompressed-payload offset."""
@@ -579,9 +543,12 @@ def iterate_cv_teams_from_payload(
         yield _read_team(reader, team_index)
 
 
-def locate_cv_team_array_end(payload: bytes, *, byte_offset: int) -> int:
+def locate_team_array_end_impl(payload: bytes, *, byte_offset: int) -> int:
     """Return the first byte after the 64 structurally decoded teams."""
     reader = _Reader(payload, byte_offset)
     for team_index in range(_TEAM_COUNT):
         _ = _read_team(reader, team_index)
     return reader.offset
+
+
+__all__: tuple[str, ...] = ()

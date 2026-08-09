@@ -16,3 +16,6 @@ class CvUnit:
     unit_type_index: int
     x: int
     y: int
+
+
+__all__: tuple[str, ...] = ()

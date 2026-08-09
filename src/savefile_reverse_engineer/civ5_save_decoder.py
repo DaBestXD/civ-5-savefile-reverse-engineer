@@ -8,17 +8,35 @@ from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
 from ._free_list import read_free_list_header
-from .civ5_header import (
-    decode_civ5_save_header_bytes,
-    decompress_civ5_save_payload_bytes,
+from ._semantic import (
+    make_player,
+    make_player_slots,
+    make_plot,
+    make_settings,
+    make_summary,
+    make_team,
 )
-from .civ5_header_types import Civ5SaveHeader
-from .cv_player import iterate_cv_players_from_payload
-from .cv_player_types import CvPlayer
-from .cv_plot import iterate_cv_plots_from_payload, locate_cv_plot_array_end
-from .cv_plot_types import CvPlot
-from .cv_team import iterate_cv_teams_from_payload, locate_cv_team_array_end
-from .cv_team_types import CvTeam
+from .civ5_header import (
+    decode_header_bytes_impl,
+    decompress_payload_bytes_impl,
+)
+from .civ5_header_types import Civ5SaveHeader as RawCiv5SaveHeader
+from .cv_player import iterate_players_from_payload_impl
+from .cv_player_types import CvPlayer as RawCvPlayer
+from .cv_plot import iterate_plots_from_payload_impl, locate_plot_array_end_impl
+from .cv_team import iterate_teams_from_payload_impl, locate_team_array_end_impl
+from .cv_team_types import CvTeam as RawCvTeam
+from .models import (
+    CvCity,
+    CvPlayer,
+    CvPlot,
+    CvTeam,
+    CvUnit,
+    GameSettings,
+    PlayerSlot,
+    SaveSummary,
+    SlotStatus,
+)
 
 _SQLITE_SIGNATURE = b"SQLite format 3\x00"
 _SQLITE_LENGTH = 0xC00
@@ -40,9 +58,7 @@ class Civ5SavePayloadDecodeError(ValueError):
     def __init__(self, message: str, *, offset: int, field: str) -> None:
         self.offset = offset
         self.field = field
-        super().__init__(
-            f"{field} at decompressed byte offset 0x{offset:X}: {message}"
-        )
+        super().__init__(f"{field} at decompressed byte offset 0x{offset:X}: {message}")
 
 
 class _PayloadReader(LittleEndianReader):
@@ -133,12 +149,8 @@ def _skip_cv_area(reader: _PayloadReader, area_index: int) -> None:
     _ = reader.read_bytes(4 * 4, f"{field}.boundaries")
     _ = reader.read_bool(f"{field}.water")
     _ = reader.read_bool(f"{field}.mountains")
-    _ = reader.read_bytes(
-        5 * _PLAYER_TEAM_COUNT * 4, f"{field}.player_team_arrays"
-    )
-    _ = reader.read_bytes(
-        _CIV_PLAYER_COUNT * 8, f"{field}.target_city_references"
-    )
+    _ = reader.read_bytes(5 * _PLAYER_TEAM_COUNT * 4, f"{field}.player_team_arrays")
+    _ = reader.read_bytes(_CIV_PLAYER_COUNT * 8, f"{field}.target_city_references")
     _ = reader.read_bytes(
         _CIV_PLAYER_COUNT * _YIELD_COUNT * 4,
         f"{field}.yield_rate_modifiers",
@@ -170,10 +182,8 @@ def _skip_cv_landmass(reader: _PayloadReader, landmass_index: int) -> None:
     _ = reader.i8(f"{field}.continent_type")
 
 
-def _locate_cv_teams(
-    payload: bytes, plot_location: _CvPlotLocation
-) -> _CvTeamLocation:
-    plot_end = locate_cv_plot_array_end(
+def _locate_cv_teams(payload: bytes, plot_location: _CvPlotLocation) -> _CvTeamLocation:
+    plot_end = locate_plot_array_end_impl(
         payload,
         byte_offset=plot_location.byte_offset,
         width=plot_location.width,
@@ -286,14 +296,20 @@ class Civ5SaveDecoder:
         "_header_cache",
         "_payload_cache",
         "_player_location_cache",
+        "_player_slots_cache",
         "_plot_location_cache",
         "_save_bytes",
+        "_settings_cache",
+        "_summary_cache",
         "_team_location_cache",
     )
 
     _save_bytes: bytes
-    _header_cache: Civ5SaveHeader | None
+    _header_cache: RawCiv5SaveHeader | None
     _payload_cache: bytes | None
+    _summary_cache: SaveSummary | None
+    _settings_cache: GameSettings | None
+    _player_slots_cache: tuple[PlayerSlot, ...] | None
     _plot_location_cache: _CvPlotLocation | None
     _player_location_cache: _CvPlayerLocation | None
     _team_location_cache: _CvTeamLocation | None
@@ -302,46 +318,75 @@ class Civ5SaveDecoder:
         self._save_bytes = Path(save_path).read_bytes()
         self._header_cache = None
         self._payload_cache = None
+        self._summary_cache = None
+        self._settings_cache = None
+        self._player_slots_cache = None
         self._plot_location_cache = None
         self._player_location_cache = None
         self._team_location_cache = None
 
     @property
-    def header(self) -> Civ5SaveHeader:
-        """Return the decoded physical header, decoding and caching it once."""
+    def raw_header(self) -> RawCiv5SaveHeader:
+        """Return the cached exact physical-header record."""
         header = self._header_cache
         if header is None:
-            header = decode_civ5_save_header_bytes(self._save_bytes)
+            header = decode_header_bytes_impl(self._save_bytes)
             self._header_cache = header
         return header
 
-    def decompress_payload(self) -> bytes:
-        """Return and cache the complete decompressed save payload."""
+    @property
+    def summary(self) -> SaveSummary:
+        """Return cached common metadata from the save's quick header."""
+        summary = self._summary_cache
+        if summary is None:
+            summary = make_summary(self.raw_header)
+            self._summary_cache = summary
+        return summary
+
+    @property
+    def settings(self) -> GameSettings:
+        """Return cached common, non-sensitive game settings."""
+        settings = self._settings_cache
+        if settings is None:
+            settings = make_settings(self.raw_header)
+            self._settings_cache = settings
+        return settings
+
+    @property
+    def player_slots(self) -> tuple[PlayerSlot, ...]:
+        """Return cached semantic records for all 64 saved player slots."""
+        slots = self._player_slots_cache
+        if slots is None:
+            slots = make_player_slots(self.raw_header)
+            self._player_slots_cache = slots
+        return slots
+
+    @property
+    def payload_bytes(self) -> bytes:
+        """Return and cache the complete decompressed save payload bytes."""
         payload = self._payload_cache
         if payload is None:
-            payload = decompress_civ5_save_payload_bytes(
-                self._save_bytes, self.header
-            )
+            payload = decompress_payload_bytes_impl(self._save_bytes, self.raw_header)
             self._payload_cache = payload
         return payload
 
-    def iter_cv_plots(self) -> Iterator[CvPlot]:
+    def iter_plots(self) -> Iterator[CvPlot]:
         """Return a fresh lazy iterator over every plot in the save's CvMap."""
-        payload = self.decompress_payload()
+        payload = self.payload_bytes
         location = self._plot_location_cache
         if location is None:
             location = _locate_cv_plots(payload)
             self._plot_location_cache = location
-        return iterate_cv_plots_from_payload(
+        raw_plots = iterate_plots_from_payload_impl(
             payload,
             byte_offset=location.byte_offset,
             width=location.width,
             height=location.height,
         )
+        return (make_plot(plot) for plot in raw_plots)
 
-    def iter_cv_teams(self) -> Iterator[CvTeam]:
-        """Return a fresh lazy iterator over all 64 teams in the save."""
-        payload = self.decompress_payload()
+    def _iter_raw_teams(self) -> Iterator[RawCvTeam]:
+        payload = self.payload_bytes
         plot_location = self._plot_location_cache
         if plot_location is None:
             plot_location = _locate_cv_plots(payload)
@@ -350,13 +395,25 @@ class Civ5SaveDecoder:
         if team_location is None:
             team_location = _locate_cv_teams(payload, plot_location)
             self._team_location_cache = team_location
-        return iterate_cv_teams_from_payload(
+        return iterate_teams_from_payload_impl(
             payload, byte_offset=team_location.byte_offset
         )
 
-    def iter_cv_players(self) -> Iterator[CvPlayer]:
-        """Return a fresh lazy iterator over all 64 players and nested objects."""
-        payload = self.decompress_payload()
+    def iter_teams(self) -> Iterator[CvTeam]:
+        """Return a fresh lazy iterator over participant teams."""
+        participant_teams = {
+            slot.team_index
+            for slot in self.player_slots
+            if slot.status in (SlotStatus.TAKEN, SlotStatus.COMPUTER)
+        }
+        return (
+            make_team(team)
+            for team in self._iter_raw_teams()
+            if team.team_index in participant_teams
+        )
+
+    def _iter_raw_players(self) -> Iterator[RawCvPlayer]:
+        payload = self.payload_bytes
         location = self._player_location_cache
         if location is None:
             plot_location = self._plot_location_cache
@@ -368,11 +425,11 @@ class Civ5SaveDecoder:
                 team_location = _locate_cv_teams(payload, plot_location)
                 self._team_location_cache = team_location
             teams = tuple(
-                iterate_cv_teams_from_payload(
+                iterate_teams_from_payload_impl(
                     payload, byte_offset=team_location.byte_offset
                 )
             )
-            player_offset = locate_cv_team_array_end(
+            player_offset = locate_team_array_end_impl(
                 payload, byte_offset=team_location.byte_offset
             )
             location = _CvPlayerLocation(
@@ -382,8 +439,35 @@ class Civ5SaveDecoder:
                 ),
             )
             self._player_location_cache = location
-        return iterate_cv_players_from_payload(
+        return iterate_players_from_payload_impl(
             payload,
             byte_offset=location.byte_offset,
             expected_totals=location.expected_totals,
         )
+
+    def iter_players(self) -> Iterator[CvPlayer]:
+        """Return players whose saved slots are human- or computer-controlled."""
+        participant_indices = {
+            slot.player_index
+            for slot in self.player_slots
+            if slot.status in (SlotStatus.TAKEN, SlotStatus.COMPUTER)
+        }
+        return (
+            make_player(player)
+            for player in self._iter_raw_players()
+            if player.player_index in participant_indices
+        )
+
+    def iter_cities(self) -> Iterator[CvCity]:
+        """Return a fresh lazy iterator over participant-owned cities."""
+        return (city for player in self.iter_players() for city in player.cities)
+
+    def iter_units(self) -> Iterator[CvUnit]:
+        """Return a fresh lazy iterator over participant-owned units."""
+        return (unit for player in self.iter_players() for unit in player.units)
+
+
+__all__ = (
+    "Civ5SaveDecoder",
+    "Civ5SavePayloadDecodeError",
+)

@@ -321,3 +321,6 @@ class Civ5SaveHeader:
     pregame: PreGameArchive
     unknown_spans: tuple[UnknownHeaderSpan, ...]
     compressed_chunks: tuple[CompressedChunk, ...]
+
+
+__all__: tuple[str, ...] = ()

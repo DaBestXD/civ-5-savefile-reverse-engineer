@@ -1,129 +1,58 @@
-# `CvPlayer` decoder API
+# Player, city, and unit API
 
-`Civ5SaveDecoder.iter_cv_players` reads all 64 serialized player records from a
-complete physical `.CIV5SAVE` file. It locates the array by decoding `CvMap`
-and the complete `CvTeam[64]` array. It then returns confirmed `CvPlayer`
-prefix fields and the live `CvCity` and `CvUnit` entries in each player's
-serialized free lists.
-
-The supported layout is limited to:
-
-- Lekmod v34.11
-- `CvPlayer` serialization version 16
-- `CvCity` serialization version 6
-- `CvUnit` serialization version 9
-- 64 player records
-- the pinned v34.11 free-list format and 8,192-slot ID mask
-
-This is a partial field decoder. It bounds complete player, city, and unit
-records, but it does not expose every field stored inside them.
-
-## Input and iteration
-
-Construct `Civ5SaveDecoder` with a save path and call `iter_cv_players`:
+`Civ5SaveDecoder.iter_players` returns semantic records for player slots marked
+`TAKEN` or `COMPUTER`. This includes defeated participants whose city and unit
+tuples may be empty. The decoder does not infer alive status.
 
 ```python
 from savefile_reverse_engineer import Civ5SaveDecoder
 
 decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
-for player in decoder.iter_cv_players():
-    print(player.player_index, player.faith, player.culture_times_100)
-    for city in player.cities.entries:
-        print("city", city.city_id, city.x, city.y, city.population)
-        for state in city.buildings.entries:
-            if (state.real_count or 0) > 0 or (state.free_count or 0) > 0:
-                print("building", state.building.name)
-    for unit in player.units.entries:
-        print("unit", unit.unit_id, unit.x, unit.y)
+for player in decoder.iter_players():
+    print(player.player_index, player.faith, player.culture_x100)
+    for city in player.cities:
+        print(city.owner_player_index, city.city_id, city.population)
+        for state in city.buildings:
+            if state.real_count > 0 or state.free_count > 0:
+                print(state.building_type.key)
+    for unit in player.units:
+        print(unit.owner_player_index, unit.unit_id, unit.x, unit.y)
 ```
 
-The method returns a fresh lazy iterator. The decoder caches the decompressed
-payload and the array location. It creates new result objects each time the
-iterator is consumed.
+`iter_cities()` and `iter_units()` flatten the participant-owned nested
+records. Every returned city and unit carries its `owner_player_index`.
 
-Callers that already have the exact serialized player-array bytes can use:
+Semantic records omit byte locations, serialization versions, free-list slot
+metadata, and zero-hash building placeholders. City-wide building values are
+available through `city.building_stats`.
+
+## Exact raw records
+
+Use the raw decoder when all 64 records or free-list metadata are required:
 
 ```python
-from savefile_reverse_engineer.cv_player import decode_cv_player_array_bytes
+from savefile_reverse_engineer.raw import decode_player_array_bytes
 
-players = tuple(decode_cv_player_array_bytes(player_array_bytes))
+players = tuple(decode_player_array_bytes(exact_player_array_bytes))
+print(players[0].byte_offset)
+print(players[0].cities.slot_count)
+print(players[0].cities.entries[0].buildings.version)
 ```
 
-The bytes-only input must contain exactly 64 player records and no leading or
-trailing data.
+The input must contain exactly 64 player records and no leading or trailing
+data. Raw results preserve live-slot order, deleted-slot metadata, exact record
+boundaries, and all 268 building inventory slots.
 
-## Results
-
-Each `CvPlayer` contains:
-
-- its array index, decompressed byte offset, and complete record length
-- version, starting coordinate, population, and land counters
-- confirmed culture, faith, and happiness prefix values
-- `cities`, a `SerializedFreeList[CvCity]`
-- `units`, a `SerializedFreeList[CvUnit]`
-
-`SerializedFreeList` preserves the saved slot capacity, last occupied index,
-free-chain head, free count, current ID generation, next-free indexes, byte
-range, and live entries. `entries` are in serialized live-slot order. Deleted
-slots do not produce entries.
-
-Each city exposes its ID, coordinates, rally point, founding and acquisition
-turns, population counters, early Great Person counters, early culture values,
-and its `CvCityBuildings` inventory. The inventory contains all 268 serialized
-building types. Each entry includes its hash and known Lekmod name, construction
-progress and duration, original owner and year, and real and free counts. A
-zero-hash placeholder has `None` values. Each unit exposes its ID, saved runtime
-unit-type index, and coordinates.
-
-The unit-type value is an integer runtime database index. The current record
-prefix does not serialize a type hash, so the decoder does not assign a unit
-name. Do not assume that the same index identifies the same unit under another
-mod or database order.
-
-## Structural boundaries
-
-Every supported player contains three consecutive `FFreeListTrashArray`
-objects: cities, units, and armies. The decoder validates all three headers and
-uses them to bound each variable player record. Only the city and unit lists are
-returned by the public result.
-
-Complete-save decoding also compares every player's saved population and land
-with the corresponding decoded team totals. The bytes-only decoder finds a
-single 64-record path where every record contains exactly three validated free
-lists and the calculated final record ends at input EOF.
-
-See the [player, city, and unit byte layout](player-information.md) for the
-free-list rules, confirmed record prefixes, and building-inventory boundary.
-
-## Errors and validation
-
-Malformed player data raises `CvPlayerDecodeError`. Its `player_index`,
-`offset`, and `field` attributes identify the failing record, absolute byte
-offset, and logical field. Bytes-only offsets are relative to the supplied
-array. Complete-save offsets are relative to the decompressed payload.
-
-The decoder rejects:
-
-- unsupported player, city, or unit versions
-- missing or extra player records
-- missing or extra object free lists between player boundaries
-- invalid free-list capacities, indexes, counts, IDs, or free-chain cycles
-- a live-entry count that disagrees with occupied and deleted slots
-- city or unit IDs that do not identify the expected live slot
-- implausible player, city, or unit coordinates
-- unsupported building versions, invalid building counts, mismatched building
-  hashes, and malformed building flags
-- player population or land that disagrees with the corresponding team
-- a final player record outside the supplied bytes
-- leading or trailing data in the bytes-only API
+Malformed records raise `CvPlayerDecodeError` with `player_index`, `offset`,
+and `field` context.
 
 ## Compatibility limits
 
-The boundary parser depends on the v34.11 ordering of the city, unit, and army
-free lists. It has not been validated for vanilla Civilization V, other mods,
-or later Lekmod versions. It also does not yet expose player AI subobjects,
-treasury, diplomacy, city citizens, building yield changes, building Great Work
-assignments, unit promotions, unit missions, or the army entries.
+The supported raw layout is Lekmod v34.11: `CvPlayer` version 16, `CvCity`
+version 6, `CvUnit` version 9, and the pinned 8,192-slot free-list ID mask. The
+decoder does not yet expose player AI subobjects, treasury, diplomacy, city
+citizens, building yield changes, Great Work assignments, unit promotions,
+unit missions, or army entries.
 
-The [byte-layout reference](player-information.md) also contains the pinned
-source references.
+See the [player, city, and unit byte layout](player-information.md) for exact
+serialization details.
