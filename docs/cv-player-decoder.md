@@ -107,6 +107,32 @@ Every semantic production order has optional `production_x100` progress and
 building order and are `None` for other order types whose progress is not yet
 decoded. Divide `production_x100` by 100 to obtain ordinary production points.
 
+`city.yield_vectors` exposes the 18 seven-value vectors serialized by
+Lekmod v34.11. Every vector has named `food`, `production`, `gold`, `science`,
+`culture`, `faith`, and `golden_age_points` fields. The named vectors cover
+plot bonuses; base yields from terrain, buildings, specialists, miscellaneous
+sources, religion, and policies; garrison bonuses; per-population and
+per-religion yields; rate modifiers; extra specialist yields; and
+production-to-yield conversion. Fields ending in `_x100` store hundredths.
+
+For example, the saved building and ordinary-population science components are
+available without reconstructing them from the building catalogue:
+
+```python
+for city in decoder.iter_cities():
+    vectors = city.yield_vectors
+    print(
+        city.name_key,
+        vectors.base_yield_rate_from_buildings.science,
+        vectors.base_yield_rate_from_misc.science,
+        vectors.yield_per_population_x100.science,
+    )
+```
+
+These are saved intermediate values, not a precomputed final yield. Final city
+science can also depend on city status, owner and area modifiers, active
+garrison state, Great Works, production conversion, and trade routes.
+
 ## Exact raw records
 
 Use the raw decoder when all 64 records or free-list metadata are required:

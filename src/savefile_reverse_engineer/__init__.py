@@ -9,6 +9,8 @@ from .cv_player import CvPlayerDecodeError
 from .cv_plot import CvPlotDecodeError
 from .cv_team import CvTeamDecodeError
 from .models import (
+    CityYieldValues,
+    CityYieldVectors,
     CvCity,
     CvPlayer,
     CvPlot,
@@ -33,6 +35,8 @@ from .models import (
 )
 
 __all__ = (
+    "CityYieldValues",
+    "CityYieldVectors",
     "Civ5SaveDecoder",
     "Civ5SaveHeaderDecodeError",
     "Civ5SavePayloadDecodeError",

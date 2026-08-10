@@ -126,7 +126,39 @@ with the following confirmed fields:
 
 The decoder follows the remaining source-order fields before the building
 object to validate the city start. It exposes the length-prefixed UTF-8 city
-localization key as `name_key`. Most of the other values are not exposed.
+localization key as `name_key` and the 18 yield vectors described below. Most
+of the other values are not exposed.
+
+## Confirmed CvCity yield vectors
+
+Eighteen length-prefixed integer vectors follow the city owner fields. Each
+vector contains seven values in this order: food, production, gold, science,
+culture, faith, and Golden Age Points.
+
+| Order | Public field | Source member |
+|---:|---|---|
+| 1 | `sea_plot_yield` | `m_aiSeaPlotYield` |
+| 2 | `river_plot_yield` | `m_aiRiverPlotYield` |
+| 3 | `lake_plot_yield` | `m_aiLakePlotYield` |
+| 4 | `sea_resource_yield` | `m_aiSeaResourceYield` |
+| 5 | `base_yield_rate_from_terrain` | `m_aiBaseYieldRateFromTerrain` |
+| 6 | `base_yield_rate_from_buildings` | `m_aiBaseYieldRateFromBuildings` |
+| 7 | `base_yield_rate_from_specialists` | `m_aiBaseYieldRateFromSpecialists` |
+| 8 | `base_yield_rate_from_misc` | `m_aiBaseYieldRateFromMisc` |
+| 9 | `base_yield_rate_from_religion` | `m_aiBaseYieldRateFromReligion` |
+| 10 | `base_yield_rate_from_policies` | `m_aiBaseYieldRateFromPolicies` |
+| 11 | `garrison_yield_bonus` | `m_aiGarrisonYieldBonus` |
+| 12 | `yield_per_population_x100` | `m_aiYieldPerPop` |
+| 13 | `yield_per_religion_x100` | `m_aiYieldPerReligion` |
+| 14 | `yield_rate_modifier` | `m_aiYieldRateModifier` |
+| 15 | `power_yield_rate_modifier` | `m_aiPowerYieldRateModifier` |
+| 16 | `resource_yield_rate_modifier` | `m_aiResourceYieldRateModifier` |
+| 17 | `extra_specialist_yield` | `m_aiExtraSpecialistYield` |
+| 18 | `production_to_yield_modifier` | `m_aiProductionToYieldModifier` |
+
+The raw and semantic `CvCity` records group these fields under
+`yield_vectors`. The per-population and per-religion vectors use hundredths.
+The rate and production-conversion vectors contain percentage modifiers.
 
 ## Confirmed CvCityBuildings inventory
 

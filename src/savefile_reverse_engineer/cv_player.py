@@ -17,6 +17,8 @@ from ._free_list import (
 )
 from .cv_city_types import (
     CityBuildingState,
+    CityYieldValues,
+    CityYieldVectors,
     CvCity,
     CvCityBuildings,
     ProductionOrder,
@@ -52,7 +54,6 @@ _CITY_IMPROVEMENT_COUNT = 46
 _CITY_SCALARS_AFTER_PREFIX = 44
 _CITY_FLAGS_AFTER_SCALARS = 10
 _CITY_OWNER_FIELDS = 4
-_CITY_YIELD_VECTORS = 18
 _CITY_DOMAIN_VECTORS = 2
 _MINIMUM_PLAYER_LENGTH = 0x20000
 _INVALID_PLOT_COORD = -0x7FFFFFFF
@@ -129,12 +130,14 @@ class _CityCandidate:
     offset: int
     buildings_offset: int
     name_key: str
+    yield_vectors: CityYieldVectors
 
 
 @dataclass(slots=True)
 class _CityProbe:
     buildings_offset: int
     name_key: str
+    yield_vectors: CityYieldVectors
 
 
 @dataclass(slots=True)
@@ -413,6 +416,84 @@ def _skip_exact_int_vector(reader: _Reader, *, count: int, field: str) -> None:
     _ = reader.read_bytes(count * 4, f"{field}.values")
 
 
+def _read_city_yield_values(reader: _Reader, *, field: str) -> CityYieldValues:
+    count_offset = reader.offset
+    saved_count = reader.u32(f"{field}.count")
+    if saved_count != _CITY_YIELD_COUNT:
+        reader.fail(
+            f"saved count is {saved_count}, expected {_CITY_YIELD_COUNT}",
+            offset=count_offset,
+            field=f"{field}.count",
+        )
+    return CityYieldValues(
+        food=reader.i32(f"{field}.food"),
+        production=reader.i32(f"{field}.production"),
+        gold=reader.i32(f"{field}.gold"),
+        science=reader.i32(f"{field}.science"),
+        culture=reader.i32(f"{field}.culture"),
+        faith=reader.i32(f"{field}.faith"),
+        golden_age_points=reader.i32(f"{field}.golden_age_points"),
+    )
+
+
+def _read_city_yield_vectors(reader: _Reader) -> CityYieldVectors:
+    field = "cities.probe.yield_vectors"
+    return CityYieldVectors(
+        sea_plot_yield=_read_city_yield_values(reader, field=f"{field}.sea_plot_yield"),
+        river_plot_yield=_read_city_yield_values(
+            reader, field=f"{field}.river_plot_yield"
+        ),
+        lake_plot_yield=_read_city_yield_values(
+            reader, field=f"{field}.lake_plot_yield"
+        ),
+        sea_resource_yield=_read_city_yield_values(
+            reader, field=f"{field}.sea_resource_yield"
+        ),
+        base_yield_rate_from_terrain=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_terrain"
+        ),
+        base_yield_rate_from_buildings=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_buildings"
+        ),
+        base_yield_rate_from_specialists=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_specialists"
+        ),
+        base_yield_rate_from_misc=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_misc"
+        ),
+        base_yield_rate_from_religion=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_religion"
+        ),
+        base_yield_rate_from_policies=_read_city_yield_values(
+            reader, field=f"{field}.base_yield_rate_from_policies"
+        ),
+        garrison_yield_bonus=_read_city_yield_values(
+            reader, field=f"{field}.garrison_yield_bonus"
+        ),
+        yield_per_population_x100=_read_city_yield_values(
+            reader, field=f"{field}.yield_per_population_x100"
+        ),
+        yield_per_religion_x100=_read_city_yield_values(
+            reader, field=f"{field}.yield_per_religion_x100"
+        ),
+        yield_rate_modifier=_read_city_yield_values(
+            reader, field=f"{field}.yield_rate_modifier"
+        ),
+        power_yield_rate_modifier=_read_city_yield_values(
+            reader, field=f"{field}.power_yield_rate_modifier"
+        ),
+        resource_yield_rate_modifier=_read_city_yield_values(
+            reader, field=f"{field}.resource_yield_rate_modifier"
+        ),
+        extra_specialist_yield=_read_city_yield_values(
+            reader, field=f"{field}.extra_specialist_yield"
+        ),
+        production_to_yield_modifier=_read_city_yield_values(
+            reader, field=f"{field}.production_to_yield_modifier"
+        ),
+    )
+
+
 def _skip_exact_bool_vector(reader: _Reader, *, count: int, field: str) -> None:
     count_offset = reader.offset
     saved_count = reader.u32(f"{field}.count")
@@ -601,12 +682,7 @@ def _try_locate_city_buildings(
             _CITY_OWNER_FIELDS * 4,
             "cities.probe.owner_fields",
         )
-        for index in range(_CITY_YIELD_VECTORS):
-            _skip_exact_int_vector(
-                reader,
-                count=_CITY_YIELD_COUNT,
-                field=f"cities.probe.yield_vectors[{index}]",
-            )
+        yield_vectors = _read_city_yield_vectors(reader)
         for index in range(_CITY_DOMAIN_VECTORS):
             _skip_exact_int_vector(
                 reader,
@@ -643,7 +719,11 @@ def _try_locate_city_buildings(
         return None
     if reader.offset > end:
         return None
-    return _CityProbe(buildings_offset=reader.offset, name_key=name_key)
+    return _CityProbe(
+        buildings_offset=reader.offset,
+        name_key=name_key,
+        yield_vectors=yield_vectors,
+    )
 
 
 def _find_city_candidates(
@@ -694,6 +774,7 @@ def _find_city_candidates(
                             offset=candidate_offset,
                             buildings_offset=probe.buildings_offset,
                             name_key=probe.name_key,
+                            yield_vectors=probe.yield_vectors,
                         )
                     )
         candidate_offset += 1
@@ -1180,6 +1261,7 @@ def _read_city(
     slot_index: int,
     player_index: int,
     name_key: str,
+    yield_vectors: CityYieldVectors,
 ) -> CvCity:
     reader = _Reader(data, start, player_index)
     field = f"cities.entries[{record_index}]"
@@ -1231,6 +1313,7 @@ def _read_city(
         great_people_rate_modifier=reader.i32(f"{field}.great_people_rate_modifier"),
         culture_stored_times_100=reader.i32(f"{field}.culture_stored_times_100"),
         culture_level=reader.i32(f"{field}.culture_level"),
+        yield_vectors=yield_vectors,
         buildings=buildings,
         production_queue=production_queue,
     )
@@ -1330,6 +1413,7 @@ def _read_player(
             slot_index=city_header.live_slots[index],
             player_index=player_index,
             name_key=city_candidate.name_key,
+            yield_vectors=city_candidate.yield_vectors,
         )
         for index, city_candidate in enumerate(city_candidates)
     )

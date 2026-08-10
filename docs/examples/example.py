@@ -11,8 +11,7 @@ def main() -> None:
         print("-" * 100)
         print(p.display_name)
         for c in p.cities:
-            print(c.name_key)
-            print(c.building_stats)
+            print(c.yield_vectors.yield_rate_modifier)
 
 
 if __name__ == "__main__":

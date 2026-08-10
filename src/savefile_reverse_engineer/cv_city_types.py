@@ -44,6 +44,43 @@ class CityBuildingState:
 
 
 @dataclass(slots=True)
+class CityYieldValues:
+    """One serialized seven-value city yield vector."""
+
+    food: int
+    production: int
+    gold: int
+    science: int
+    culture: int
+    faith: int
+    golden_age_points: int
+
+
+@dataclass(slots=True)
+class CityYieldVectors:
+    """The 18 yield vectors serialized before a city's name."""
+
+    sea_plot_yield: CityYieldValues
+    river_plot_yield: CityYieldValues
+    lake_plot_yield: CityYieldValues
+    sea_resource_yield: CityYieldValues
+    base_yield_rate_from_terrain: CityYieldValues
+    base_yield_rate_from_buildings: CityYieldValues
+    base_yield_rate_from_specialists: CityYieldValues
+    base_yield_rate_from_misc: CityYieldValues
+    base_yield_rate_from_religion: CityYieldValues
+    base_yield_rate_from_policies: CityYieldValues
+    garrison_yield_bonus: CityYieldValues
+    yield_per_population_x100: CityYieldValues
+    yield_per_religion_x100: CityYieldValues
+    yield_rate_modifier: CityYieldValues
+    power_yield_rate_modifier: CityYieldValues
+    resource_yield_rate_modifier: CityYieldValues
+    extra_specialist_yield: CityYieldValues
+    production_to_yield_modifier: CityYieldValues
+
+
+@dataclass(slots=True)
 class CvCityBuildings:
     """Confirmed header and inventory arrays from one CvCityBuildings object."""
 
@@ -87,6 +124,7 @@ class CvCity:
     great_people_rate_modifier: int
     culture_stored_times_100: int
     culture_level: int
+    yield_vectors: CityYieldVectors
     buildings: CvCityBuildings
     production_queue: tuple[ProductionOrder, ...]
 

@@ -259,6 +259,43 @@ class CityBuildingState:
 
 
 @dataclass(frozen=True, slots=True)
+class CityYieldValues:
+    """One seven-value city yield vector."""
+
+    food: int
+    production: int
+    gold: int
+    science: int
+    culture: int
+    faith: int
+    golden_age_points: int
+
+
+@dataclass(frozen=True, slots=True)
+class CityYieldVectors:
+    """Named city yield vectors saved by Lekmod v34.11."""
+
+    sea_plot_yield: CityYieldValues
+    river_plot_yield: CityYieldValues
+    lake_plot_yield: CityYieldValues
+    sea_resource_yield: CityYieldValues
+    base_yield_rate_from_terrain: CityYieldValues
+    base_yield_rate_from_buildings: CityYieldValues
+    base_yield_rate_from_specialists: CityYieldValues
+    base_yield_rate_from_misc: CityYieldValues
+    base_yield_rate_from_religion: CityYieldValues
+    base_yield_rate_from_policies: CityYieldValues
+    garrison_yield_bonus: CityYieldValues
+    yield_per_population_x100: CityYieldValues
+    yield_per_religion_x100: CityYieldValues
+    yield_rate_modifier: CityYieldValues
+    power_yield_rate_modifier: CityYieldValues
+    resource_yield_rate_modifier: CityYieldValues
+    extra_specialist_yield: CityYieldValues
+    production_to_yield_modifier: CityYieldValues
+
+
+@dataclass(frozen=True, slots=True)
 class ProductionOrder:
     """One item in a city's production queue, in queue order."""
 
@@ -310,6 +347,7 @@ class CvCity:
     great_people_rate_modifier: int
     culture_stored_x100: int
     culture_level: int
+    yield_vectors: CityYieldVectors
     building_stats: CityBuildingStats
     buildings: tuple[CityBuildingState, ...]
     current_production: ProductionOrder | None
@@ -442,6 +480,8 @@ class CvTeam:
 __all__ = (
     "CityBuildingState",
     "CityBuildingStats",
+    "CityYieldValues",
+    "CityYieldVectors",
     "CvCity",
     "CvPlayer",
     "CvPlot",

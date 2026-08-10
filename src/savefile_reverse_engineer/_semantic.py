@@ -5,6 +5,8 @@ from .civ5_header_types import Civ5SaveHeader as RawCiv5SaveHeader
 from .cv_city_types import (
     CityBuildingState as RawCityBuildingState,
 )
+from .cv_city_types import CityYieldValues as RawCityYieldValues
+from .cv_city_types import CityYieldVectors as RawCityYieldVectors
 from .cv_city_types import (
     CvCity as RawCvCity,
 )
@@ -26,6 +28,8 @@ from .cv_unit_types import CvUnit as RawCvUnit
 from .models import (
     CityBuildingState,
     CityBuildingStats,
+    CityYieldValues,
+    CityYieldVectors,
     CvCity,
     CvPlayer,
     CvPlot,
@@ -187,6 +191,55 @@ def _building_state(
     )
 
 
+def _city_yield_values(values: RawCityYieldValues) -> CityYieldValues:
+    return CityYieldValues(
+        food=values.food,
+        production=values.production,
+        gold=values.gold,
+        science=values.science,
+        culture=values.culture,
+        faith=values.faith,
+        golden_age_points=values.golden_age_points,
+    )
+
+
+def _city_yield_vectors(vectors: RawCityYieldVectors) -> CityYieldVectors:
+    return CityYieldVectors(
+        sea_plot_yield=_city_yield_values(vectors.sea_plot_yield),
+        river_plot_yield=_city_yield_values(vectors.river_plot_yield),
+        lake_plot_yield=_city_yield_values(vectors.lake_plot_yield),
+        sea_resource_yield=_city_yield_values(vectors.sea_resource_yield),
+        base_yield_rate_from_terrain=_city_yield_values(
+            vectors.base_yield_rate_from_terrain
+        ),
+        base_yield_rate_from_buildings=_city_yield_values(
+            vectors.base_yield_rate_from_buildings
+        ),
+        base_yield_rate_from_specialists=_city_yield_values(
+            vectors.base_yield_rate_from_specialists
+        ),
+        base_yield_rate_from_misc=_city_yield_values(vectors.base_yield_rate_from_misc),
+        base_yield_rate_from_religion=_city_yield_values(
+            vectors.base_yield_rate_from_religion
+        ),
+        base_yield_rate_from_policies=_city_yield_values(
+            vectors.base_yield_rate_from_policies
+        ),
+        garrison_yield_bonus=_city_yield_values(vectors.garrison_yield_bonus),
+        yield_per_population_x100=_city_yield_values(vectors.yield_per_population_x100),
+        yield_per_religion_x100=_city_yield_values(vectors.yield_per_religion_x100),
+        yield_rate_modifier=_city_yield_values(vectors.yield_rate_modifier),
+        power_yield_rate_modifier=_city_yield_values(vectors.power_yield_rate_modifier),
+        resource_yield_rate_modifier=_city_yield_values(
+            vectors.resource_yield_rate_modifier
+        ),
+        extra_specialist_yield=_city_yield_values(vectors.extra_specialist_yield),
+        production_to_yield_modifier=_city_yield_values(
+            vectors.production_to_yield_modifier
+        ),
+    )
+
+
 def _building_production(
     city: RawCvCity,
     order: RawProductionOrder,
@@ -245,6 +298,7 @@ def _city(city: RawCvCity, owner_player_index: int) -> CvCity:
         great_people_rate_modifier=city.great_people_rate_modifier,
         culture_stored_x100=city.culture_stored_times_100,
         culture_level=city.culture_level,
+        yield_vectors=_city_yield_vectors(city.yield_vectors),
         building_stats=CityBuildingStats(
             production_modifier=inventory.production_modifier,
             defense=inventory.defense,

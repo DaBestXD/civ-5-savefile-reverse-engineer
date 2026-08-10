@@ -198,6 +198,22 @@ def test_decodes_semantic_city_fields_and_ownership() -> None:
 
 
 @_requires_save
+def test_decodes_semantic_city_yield_vectors() -> None:
+    capital = next(Civ5SaveDecoder(_SAVE_PATH).iter_cities())
+    vectors = capital.yield_vectors
+
+    assert vectors.base_yield_rate_from_terrain.science == 0
+    assert vectors.base_yield_rate_from_buildings.science == 6
+    assert vectors.base_yield_rate_from_specialists.science == 0
+    assert vectors.base_yield_rate_from_misc.science == 16
+    assert vectors.base_yield_rate_from_religion.science == 0
+    assert vectors.base_yield_rate_from_policies.science == 0
+    assert vectors.yield_per_population_x100.science == 50
+    assert vectors.yield_rate_modifier.science == 0
+    assert vectors.production_to_yield_modifier.science == 0
+
+
+@_requires_save
 def test_decodes_only_present_city_buildings() -> None:
     cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
 
@@ -529,13 +545,17 @@ def _synthetic_city_after_buildings() -> bytes:
 
 def _synthetic_city_prefix_to_buildings() -> bytes:
     city_prefix = _i32_values((6, 8192, 2, 3, -1, -1, 10, 10, 7, 7, 0, 0, 0, 250, 1))
+    yield_vectors = tuple(
+        tuple(vector_index * 10 + yield_index for yield_index in range(7))
+        for vector_index in range(18)
+    )
     return b"".join(
         (
             city_prefix,
             _i32_values(tuple(0 for _ in range(44))),
             bytes(10),
             _i32_values((0, 0, 0, 0)),
-            *(_int_vector(tuple(0 for _ in range(7))) for _ in range(18)),
+            *(_int_vector(values) for values in yield_vectors),
             *(_int_vector(tuple(0 for _ in range(5))) for _ in range(2)),
             _bool_vector(tuple(False for _ in range(80))),
             _bool_vector(tuple(False for _ in range(80))),
@@ -644,6 +664,22 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     )
     assert policy_information.branches[0].unlocked is True
     assert players[0].cities.entries[0].population == 7
+    yield_vectors = players[0].cities.entries[0].yield_vectors
+    assert yield_vectors.sea_plot_yield.food == 0
+    assert yield_vectors.base_yield_rate_from_terrain.science == 43
+    assert yield_vectors.base_yield_rate_from_buildings.science == 53
+    assert yield_vectors.base_yield_rate_from_specialists.science == 63
+    assert yield_vectors.base_yield_rate_from_misc.science == 73
+    assert yield_vectors.base_yield_rate_from_religion.science == 83
+    assert yield_vectors.base_yield_rate_from_policies.science == 93
+    assert yield_vectors.garrison_yield_bonus.science == 103
+    assert yield_vectors.yield_per_population_x100.science == 113
+    assert yield_vectors.yield_per_religion_x100.science == 123
+    assert yield_vectors.yield_rate_modifier.science == 133
+    assert yield_vectors.power_yield_rate_modifier.science == 143
+    assert yield_vectors.resource_yield_rate_modifier.science == 153
+    assert yield_vectors.extra_specialist_yield.science == 163
+    assert yield_vectors.production_to_yield_modifier.science == 173
     assert len(buildings.entries) == _BUILDING_TYPE_COUNT
     assert entries_by_hash[firaxis_hash("BUILDING_GRANARY")].real_count == 1
     assert entries_by_hash[firaxis_hash("BUILDING_LIBRARY")].free_count == 1

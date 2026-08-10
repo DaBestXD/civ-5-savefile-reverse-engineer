@@ -37,6 +37,8 @@ from ..civ5_header_types import (
 from ..civ5_save_decoder import Civ5SavePayloadDecodeError
 from ..cv_city_types import (
     CityBuildingState,
+    CityYieldValues,
+    CityYieldVectors,
     CvCity,
     CvCityBuildings,
     ProductionOrder,
@@ -122,6 +124,8 @@ __all__ = (
     "BaseInfo",
     "BuildProgress",
     "CityBuildingState",
+    "CityYieldValues",
+    "CityYieldVectors",
     "Civ5SaveHeader",
     "Civ5SaveHeaderDecodeError",
     "Civ5SavePayloadDecodeError",
