@@ -253,6 +253,10 @@ class CityBuildingState:
     real_count: int
     free_count: int
 
+    @override
+    def __str__(self) -> str:
+        return f"{self.building_type!s}({self.production_turns=}, {self.original_owner_player_index=}, {self.original_year=})"
+
 
 @dataclass(frozen=True, slots=True)
 class ProductionOrder:
@@ -265,6 +269,10 @@ class ProductionOrder:
     secondary_data: int
     save: bool
     rush: bool
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.order_type.name}({self.item_type!s}, {self.production_x100=}, {self.production_inactive_turns=}, {self.secondary_data=}, {self.save=}, {self.rush=})"
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +401,23 @@ class CvPlot:
 
 
 @dataclass(frozen=True, slots=True)
+class TeamTechnology:
+    """State for one technology known to a participating team."""
+
+    technology: GameType
+    unlocked: bool
+    obtained_by_human: bool
+    obtained_for_league: bool
+    cannot_trade: bool
+    research_progress: int
+    acquisition_count: int
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.technology!s}({self.unlocked=}, {self.research_progress=})"
+
+
+@dataclass(frozen=True, slots=True)
 class CvTeam:
     """Common confirmed game state for one participating team."""
 
@@ -411,6 +436,7 @@ class CvTeam:
     at_war: tuple[bool, ...]
     has_embassy: tuple[bool, ...]
     has_open_borders: tuple[bool, ...]
+    technologies: tuple[TeamTechnology, ...]
 
 
 __all__ = (
@@ -436,6 +462,7 @@ __all__ = (
     "SaveSummary",
     "SlotClaim",
     "SlotStatus",
+    "TeamTechnology",
     "TerrainType",
     "WorldSettings",
 )

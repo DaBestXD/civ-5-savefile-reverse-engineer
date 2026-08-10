@@ -50,6 +50,7 @@ from .models import (
     SaveSummary,
     SlotClaim,
     SlotStatus,
+    TeamTechnology,
     TerrainType,
     WorldSettings,
 )
@@ -401,6 +402,18 @@ def make_team(team: RawCvTeam) -> CvTeam:
         at_war=team.at_war,
         has_embassy=team.has_embassy,
         has_open_borders=team.has_open_borders,
+        technologies=tuple(
+            TeamTechnology(
+                technology=_game_type(technology.technology),
+                unlocked=technology.has_technology,
+                obtained_by_human=technology.obtained_by_human,
+                obtained_for_league=technology.obtained_for_league,
+                cannot_trade=technology.cannot_trade,
+                research_progress=technology.research_progress,
+                acquisition_count=technology.acquisition_count,
+            )
+            for technology in team.technologies
+        ),
     )
 
 

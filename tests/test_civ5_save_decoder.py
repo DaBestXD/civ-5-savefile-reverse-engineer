@@ -150,6 +150,13 @@ def test_iterates_multiplayer_participant_teams() -> None:
     assert repeated_first == teams[0]
     assert repeated_first is teams[0]
 
+    first_team = teams[0]
+    assert len(first_team.technologies) == 81
+    agriculture = first_team.technologies[0]
+    assert agriculture.technology.key == "TECH_AGRICULTURE"
+    assert agriculture.unlocked
+    assert agriculture.research_progress >= 0
+
 
 def test_iterates_single_player_teams_after_variable_map_tail() -> None:
     teams = tuple(Civ5SaveDecoder(_SINGLE_PLAYER_PATH).iter_teams())

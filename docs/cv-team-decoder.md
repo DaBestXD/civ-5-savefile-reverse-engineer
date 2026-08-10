@@ -8,14 +8,22 @@ from savefile_reverse_engineer import Civ5SaveDecoder
 
 for team in Civ5SaveDecoder("AutoSave.Civ5Save").iter_teams():
     print(team.team_index, team.city_count, team.total_population)
+    unlocked = [
+        technology.technology.key
+        for technology in team.technologies
+        if technology.unlocked
+    ]
+    print(unlocked)
 ```
 
 A successful complete iteration caches the semantic teams. Later calls return
 fresh iterators over the same immutable objects without decoding them again.
 
 The semantic `CvTeam` includes common population, land, victory, route,
-diplomacy, and era state. It omits duplicate IDs, serialization metadata, and
-the detailed hashed arrays intended for format research.
+diplomacy, era, and technology state. Each technology includes its resolved
+type, unlocked state, source flags, trade restriction, research progress, and
+acquisition count. It omits duplicate IDs, serialization metadata, and the
+other detailed hashed arrays intended for format research.
 
 ## Exact raw records
 

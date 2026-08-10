@@ -28,6 +28,7 @@ from .models import (
     SaveSummary,
     SlotClaim,
     SlotStatus,
+    TeamTechnology,
     TerrainType,
 )
 
@@ -58,5 +59,6 @@ __all__ = (
     "SaveSummary",
     "SlotClaim",
     "SlotStatus",
+    "TeamTechnology",
     "TerrainType",
 )

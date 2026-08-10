@@ -39,6 +39,7 @@ def test_package_root_exports_only_the_curated_api() -> None:
     assert "ProductionOrderType" in exports
     assert "PlayerPolicyBranch" in exports
     assert "PlayerPolicyInformation" in exports
+    assert "TeamTechnology" in exports
     assert "BuildingProduction" not in exports
     assert "SerializedFreeList" not in exports
     assert "CompressedChunk" not in exports
