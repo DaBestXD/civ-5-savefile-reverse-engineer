@@ -18,6 +18,13 @@ for player in decoder.iter_players():
         player.faith,
         player.culture_x100,
     )
+    print([policy.key for policy in player.policy_information.owned_policies])
+    for branch in player.policy_information.branches:
+        if branch.unlocked:
+            print(
+                branch.branch_type.key,
+                [policy.key for policy in branch.owned_policies],
+            )
     for city in player.cities:
         print(city.owner_player_index, city.city_id, city.name_key, city.population)
         if city.current_production is not None:
@@ -66,6 +73,17 @@ Each player provides its saved multiplayer nickname through
 `leader_key`. A computer-controlled city state uses its first saved city's
 `name_key`, such as `TXT_KEY_CITYSTATE_GENEVA`. A defeated city state with no
 remaining city uses `None`.
+
+`player.policy_information.owned_policies` contains every saved policy whose
+owned flag is set. This includes branch openers, selected policies,
+automatically granted finishers, ideology tenets, and internal dummy policies.
+It is an inventory, not a count of culture purchases. Known hashes resolve to
+stable keys such as `POLICY_TRADITION`; unknown hashes retain their integer
+value and use `None` for the key.
+
+`player.policy_information.branches` contains all 12 policy branches. Each
+entry exposes its stable branch key, confirmed `unlocked` state, and the owned
+policies assigned to that branch by the pinned Lekmod v34.11 catalogue.
 
 `player.player_type` is a `PlayerType` enum value: `PLAYER`, `COMPUTER`,
 `CITY_STATE`, or `BARBARIAN`.
@@ -116,8 +134,9 @@ and `field` context.
 The supported raw layout is Lekmod v34.11: `CvPlayer` version 16, `CvCity`
 version 6, `CvUnit` version 9, and the pinned 8,192-slot free-list ID mask. The
 decoder does not yet expose player AI subobjects, treasury, diplomacy, city
-citizens, building yield changes, Great Work assignments, unit promotions,
-unit missions, or army entries.
+citizens, uncertain policy-branch arrays after the unlocked state, building
+yield changes, Great Work assignments, unit promotions, unit missions, or army
+entries.
 
 See the [player, city, and unit byte layout](player-information.md) for exact
 serialization details.

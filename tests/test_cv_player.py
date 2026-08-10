@@ -35,6 +35,8 @@ _UNIT_TYPE_COUNT = 265
 _IMPROVEMENT_TYPE_COUNT = 46
 _UNIT_COMBAT_TYPE_COUNT = 18
 _PROMOTION_TYPE_COUNT = 340
+_POLICY_SLOT_COUNT = 138
+_POLICY_BRANCH_COUNT = 12
 
 _requires_save = pytest.mark.skipif(
     not _SAVE_PATH.is_file(), reason="the local Lekmod v34.11 save is unavailable"
@@ -79,6 +81,97 @@ def test_decodes_participant_players_and_nested_objects() -> None:
     assert len(players[0].units) == 16
     assert players[-1].cities == ()
     assert players[-1].units == ()
+
+
+@_requires_save
+def test_decodes_raw_player_policy_information() -> None:
+    raw_player = next(Civ5SaveDecoder(_SAVE_PATH)._iter_raw_players())  # pyright: ignore[reportPrivateUsage]
+    information = raw_player.policy_information
+    owned_by_name = {
+        policy.policy_type.name: policy.owned
+        for policy in information.policy_slots
+        if policy.policy_type.name is not None
+    }
+
+    assert information.byte_offset == 0x428708
+    assert information.version == 2
+    assert len(information.policy_slots) == _POLICY_SLOT_COUNT
+    assert sum(
+        policy.policy_type.hash_value == 0 for policy in information.policy_slots
+    ) == 14
+    assert all(
+        policy.policy_type.hash_value == 0 or policy.policy_type.name is not None
+        for policy in information.policy_slots
+    )
+    assert len(information.branches) == _POLICY_BRANCH_COUNT
+    assert [branch.branch_type.name for branch in information.branches] == [
+        "POLICY_BRANCH_TRADITION",
+        "POLICY_BRANCH_LIBERTY",
+        "POLICY_BRANCH_HONOR",
+        "POLICY_BRANCH_PIETY",
+        "POLICY_BRANCH_PATRONAGE",
+        "POLICY_BRANCH_AESTHETICS",
+        "POLICY_BRANCH_COMMERCE",
+        "POLICY_BRANCH_EXPLORATION",
+        "POLICY_BRANCH_RATIONALISM",
+        "POLICY_BRANCH_FREEDOM",
+        "POLICY_BRANCH_ORDER",
+        "POLICY_BRANCH_AUTOCRACY",
+    ]
+    assert owned_by_name["POLICY_TRADITION"] is True
+    assert owned_by_name["POLICY_TRADITION_FINISHER"] is True
+    assert owned_by_name["POLICY_LIBERTY"] is False
+
+
+@_requires_save
+def test_decodes_semantic_player_policy_information() -> None:
+    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    information = player.policy_information
+    branches = {branch.branch_type.key: branch for branch in information.branches}
+
+    assert [policy.key for policy in information.owned_policies] == [
+        "POLICY_TRADITION",
+        "POLICY_ARISTOCRACY",
+        "POLICY_OLIGARCHY",
+        "POLICY_LEGALISM",
+        "POLICY_LANDED_ELITE",
+        "POLICY_MONARCHY",
+        "POLICY_TRADITION_FINISHER",
+        "POLICY_EXPLORATION",
+        "POLICY_MARITIME_INFRASTRUCTURE",
+    ]
+    assert branches["POLICY_BRANCH_TRADITION"].unlocked is True
+    assert branches["POLICY_BRANCH_EXPLORATION"].unlocked is True
+    assert branches["POLICY_BRANCH_LIBERTY"].unlocked is False
+    assert [
+        policy.key
+        for policy in branches["POLICY_BRANCH_TRADITION"].owned_policies
+    ] == [
+        "POLICY_TRADITION",
+        "POLICY_ARISTOCRACY",
+        "POLICY_OLIGARCHY",
+        "POLICY_LEGALISM",
+        "POLICY_LANDED_ELITE",
+        "POLICY_MONARCHY",
+        "POLICY_TRADITION_FINISHER",
+    ]
+
+
+@_requires_early_save
+def test_preserves_multiple_partial_branch_policies() -> None:
+    player = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players())
+    tradition = next(
+        branch
+        for branch in player.policy_information.branches
+        if branch.branch_type.key == "POLICY_BRANCH_TRADITION"
+    )
+
+    assert tradition.unlocked is True
+    assert [policy.key for policy in tradition.owned_policies] == [
+        "POLICY_TRADITION",
+        "POLICY_LEGALISM",
+        "POLICY_MONARCHY",
+    ]
 
 
 @_requires_save
@@ -280,6 +373,67 @@ def _hashed_int_array(hashes: tuple[int, ...], values: tuple[int | None, ...]) -
     return bytes(encoded)
 
 
+def _hashed_bool_array(
+    hashes: tuple[int, ...], values: tuple[bool | None, ...]
+) -> bytes:
+    encoded = bytearray(len(hashes).to_bytes(4, "little"))
+    for hash_value, value in zip(hashes, values, strict=True):
+        encoded.extend(hash_value.to_bytes(4, "little"))
+        if hash_value != 0:
+            if value is None:
+                raise ValueError("a nonzero hash requires a Boolean value")
+            encoded.append(value)
+        elif value is not None:
+            raise ValueError("a zero hash cannot have a Boolean value")
+    return bytes(encoded)
+
+
+def _synthetic_policy_information() -> bytes:
+    policy_hashes = (
+        firaxis_hash("POLICY_LIBERTY"),
+        _UNKNOWN_BUILDING_HASH,
+        *(firaxis_hash(f"POLICY_SYNTHETIC_{index}") for index in range(2, 124)),
+        *(0 for _ in range(14)),
+    )
+    policy_values = (
+        True,
+        False,
+        *(False for _ in range(122)),
+        *(None for _ in range(14)),
+    )
+    branch_names = (
+        "TRADITION",
+        "LIBERTY",
+        "HONOR",
+        "PIETY",
+        "PATRONAGE",
+        "AESTHETICS",
+        "COMMERCE",
+        "EXPLORATION",
+        "RATIONALISM",
+        "FREEDOM",
+        "ORDER",
+        "AUTOCRACY",
+    )
+    branch_hashes = tuple(
+        firaxis_hash(f"POLICY_BRANCH_{name}") for name in branch_names
+    )
+    branch_values = (True, *(False for _ in range(_POLICY_BRANCH_COUNT - 1)))
+    return b"".join(
+        (
+            (2).to_bytes(4, "little"),
+            *(
+                _hashed_bool_array(policy_hashes, policy_values)
+                for _ in range(3)
+            ),
+            *(
+                _hashed_bool_array(branch_hashes, branch_values)
+                for _ in range(2)
+            ),
+        )
+    )
+
+
 def _synthetic_building_hashes() -> tuple[int, ...]:
     return (
         firaxis_hash("BUILDING_GRANARY"),
@@ -433,12 +587,19 @@ def _synthetic_unit() -> bytes:
 
 
 def _synthetic_player_record(
-    *, has_objects: bool, false_unit_prefix: bool = False
+    *,
+    has_objects: bool,
+    false_unit_prefix: bool = False,
+    duplicate_policy_information: bool = False,
 ) -> bytes:
     values = (16, 0, 0, *(0 for _ in range(14)))
     record = bytearray(
         b"".join(value.to_bytes(4, "little", signed=True) for value in values)
     )
+    policy_information = _synthetic_policy_information()
+    record.extend(policy_information)
+    if duplicate_policy_information:
+        record.extend(policy_information)
     record.extend(_free_list_header(live=has_objects))
     if has_objects:
         record.extend(_synthetic_city_prefix_to_buildings())
@@ -465,10 +626,23 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     synthetic_player_array: bytes,
 ) -> None:
     players = tuple(decode_player_array_bytes(synthetic_player_array))
+    policy_information = players[0].policy_information
     buildings = players[0].cities.entries[0].buildings
     entries_by_hash = {entry.building.hash_value: entry for entry in buildings.entries}
 
     assert len(players) == 64
+    assert len(policy_information.policy_slots) == _POLICY_SLOT_COUNT
+    assert policy_information.policy_slots[0].policy_type.name == "POLICY_LIBERTY"
+    assert policy_information.policy_slots[0].owned is True
+    assert policy_information.policy_slots[1].policy_type.hash_value == (
+        _UNKNOWN_BUILDING_HASH
+    )
+    assert policy_information.policy_slots[1].policy_type.name is None
+    assert policy_information.policy_slots[-1].owned is None
+    assert policy_information.branches[0].branch_type.name == (
+        "POLICY_BRANCH_TRADITION"
+    )
+    assert policy_information.branches[0].unlocked is True
     assert players[0].cities.entries[0].population == 7
     assert len(buildings.entries) == _BUILDING_TYPE_COUNT
     assert entries_by_hash[firaxis_hash("BUILDING_GRANARY")].real_count == 1
@@ -492,6 +666,76 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert players[0].units.entries[0].unit_hash == firaxis_hash("UNIT_WORKER")
     assert players[0].units.entries[0].unit_name == "UNIT_WORKER"
     assert players[1].cities.entries == ()
+
+
+def _policy_array_starts(data: bytes | bytearray, start: int) -> tuple[int, ...]:
+    starts: list[int] = []
+    offset = start + 4
+    for _ in range(5):
+        starts.append(offset)
+        count = int.from_bytes(data[offset : offset + 4], "little")
+        offset += 4
+        for _ in range(count):
+            hash_value = int.from_bytes(data[offset : offset + 4], "little")
+            offset += 4 + (1 if hash_value != 0 else 0)
+    return tuple(starts)
+
+
+@pytest.mark.parametrize(
+    ("mutation_offset", "replacement"),
+    (
+        (4, (137).to_bytes(4, "little")),
+        (12, bytes((2,))),
+    ),
+)
+def test_rejects_malformed_policy_block(
+    synthetic_player_array: bytes,
+    mutation_offset: int,
+    replacement: bytes,
+) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    policy_offset = first_player.policy_information.byte_offset
+    changed = bytearray(synthetic_player_array)
+    start = policy_offset + mutation_offset
+    changed[start : start + len(replacement)] = replacement
+
+    with pytest.raises(CvPlayerDecodeError, match="valid policy blocks"):
+        _ = tuple(decode_player_array_bytes(bytes(changed)))
+
+
+def test_rejects_mismatched_policy_hash_order(
+    synthetic_player_array: bytes,
+) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    changed = bytearray(synthetic_player_array)
+    arrays = _policy_array_starts(changed, first_player.policy_information.byte_offset)
+    second_array_first_hash = arrays[1] + 4
+    changed[second_array_first_hash : second_array_first_hash + 4] = (
+        _UNKNOWN_BUILDING_HASH.to_bytes(4, "little")
+    )
+
+    with pytest.raises(CvPlayerDecodeError, match="valid policy blocks"):
+        _ = tuple(decode_player_array_bytes(bytes(changed)))
+
+
+def test_rejects_missing_policy_block(synthetic_player_array: bytes) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    changed = bytearray(synthetic_player_array)
+    policy_offset = first_player.policy_information.byte_offset
+    changed[policy_offset : policy_offset + 4] = (3).to_bytes(4, "little")
+
+    with pytest.raises(CvPlayerDecodeError, match="found 0 structurally valid"):
+        _ = tuple(decode_player_array_bytes(bytes(changed)))
+
+
+def test_rejects_ambiguous_policy_blocks() -> None:
+    player_array = _synthetic_player_record(
+        has_objects=True,
+        duplicate_policy_information=True,
+    ) + (_synthetic_player_record(has_objects=False) * 63)
+
+    with pytest.raises(CvPlayerDecodeError, match="found 2 structurally valid"):
+        _ = tuple(decode_player_array_bytes(player_array))
 
 
 def test_bytes_only_decoder_rejects_trailing_data(

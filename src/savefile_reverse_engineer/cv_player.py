@@ -8,6 +8,7 @@ from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
 from ._cv_building_hashes import BUILDING_HASH_NAMES
+from ._cv_policy_hashes import POLICY_BRANCH_HASH_NAMES, POLICY_HASH_NAMES
 from ._cv_production_hashes import PROJECT_HASH_NAMES
 from ._cv_unit_hashes import UNIT_HASH_NAMES
 from ._free_list import (
@@ -21,12 +22,21 @@ from .cv_city_types import (
     ProductionOrder,
     ProductionOrderType,
 )
-from .cv_player_types import CvPlayer, SerializedFreeList
+from .cv_player_types import (
+    CvPlayer,
+    CvPlayerPolicy,
+    CvPlayerPolicyBranch,
+    CvPlayerPolicyInformation,
+    SerializedFreeList,
+)
 from .cv_plot_types import HashedType
 from .cv_unit_types import CvUnit
 
 _PLAYER_COUNT = 64
 _PLAYER_VERSION = 16
+_PLAYER_POLICIES_VERSION = 2
+_POLICY_SLOT_COUNT = 138
+_POLICY_BRANCH_COUNT = 12
 _CITY_VERSION = 6
 _CITY_BUILDINGS_VERSION = 1
 _UNIT_VERSION = 9
@@ -132,6 +142,12 @@ class _HashedIntEntry:
     hash_value: int
     value: int | None
     hash_offset: int
+
+
+@dataclass(slots=True)
+class _HashedBoolEntry:
+    hash_value: int
+    value: bool | None
 
 
 def _i32(data: bytes, offset: int) -> int:
@@ -408,6 +424,141 @@ def _skip_exact_bool_vector(reader: _Reader, *, count: int, field: str) -> None:
         )
     for index in range(count):
         _ = reader.read_bool(f"{field}[{index}]")
+
+
+def _read_exact_hashed_bool_array(
+    reader: _Reader, *, count: int, field: str
+) -> tuple[_HashedBoolEntry, ...]:
+    count_offset = reader.offset
+    saved_count = reader.u32(f"{field}.count")
+    if saved_count != count:
+        reader.fail(
+            f"saved count is {saved_count}, expected {count}",
+            offset=count_offset,
+            field=f"{field}.count",
+        )
+    entries: list[_HashedBoolEntry] = []
+    for index in range(count):
+        item_field = f"{field}[{index}]"
+        hash_value = reader.u32(f"{item_field}.type")
+        value = None if hash_value == 0 else reader.read_bool(f"{item_field}.value")
+        entries.append(_HashedBoolEntry(hash_value=hash_value, value=value))
+    return tuple(entries)
+
+
+def _try_read_policy_information(
+    data: bytes,
+    *,
+    offset: int,
+    limit: int,
+    player_index: int,
+) -> CvPlayerPolicyInformation | None:
+    reader = _Reader(data, offset, player_index)
+    try:
+        version = reader.u32("policy_information.version")
+        if version != _PLAYER_POLICIES_VERSION:
+            return None
+        policy_arrays = tuple(
+            _read_exact_hashed_bool_array(
+                reader,
+                count=_POLICY_SLOT_COUNT,
+                field=f"policy_information.policy_arrays[{array_index}]",
+            )
+            for array_index in range(3)
+        )
+        policy_hashes = tuple(entry.hash_value for entry in policy_arrays[0])
+        if any(
+            tuple(entry.hash_value for entry in entries) != policy_hashes
+            for entries in policy_arrays[1:]
+        ):
+            return None
+
+        branch_arrays = tuple(
+            _read_exact_hashed_bool_array(
+                reader,
+                count=_POLICY_BRANCH_COUNT,
+                field=f"policy_information.branch_arrays[{array_index}]",
+            )
+            for array_index in range(2)
+        )
+        branch_hashes = tuple(entry.hash_value for entry in branch_arrays[0])
+        if (
+            any(hash_value == 0 for hash_value in branch_hashes)
+            or tuple(entry.hash_value for entry in branch_arrays[1])
+            != branch_hashes
+            or reader.offset > limit
+        ):
+            return None
+    except CvPlayerDecodeError:
+        return None
+
+    policy_slots = tuple(
+        CvPlayerPolicy(
+            policy_type=HashedType(
+                hash_value=entry.hash_value,
+                name=POLICY_HASH_NAMES.get(entry.hash_value),
+            ),
+            owned=entry.value,
+        )
+        for entry in policy_arrays[0]
+    )
+    branches: list[CvPlayerPolicyBranch] = []
+    for entry in branch_arrays[0]:
+        if entry.value is None:
+            return None
+        branches.append(
+            CvPlayerPolicyBranch(
+                branch_type=HashedType(
+                    hash_value=entry.hash_value,
+                    name=POLICY_BRANCH_HASH_NAMES.get(entry.hash_value),
+                ),
+                unlocked=entry.value,
+            )
+        )
+    return CvPlayerPolicyInformation(
+        byte_offset=offset,
+        version=version,
+        policy_slots=policy_slots,
+        branches=tuple(branches),
+    )
+
+
+def _locate_policy_information(
+    data: bytes,
+    *,
+    start: int,
+    end: int,
+    player_index: int,
+) -> CvPlayerPolicyInformation:
+    marker = b"".join(
+        (
+            _PLAYER_POLICIES_VERSION.to_bytes(4, "little"),
+            _POLICY_SLOT_COUNT.to_bytes(4, "little"),
+        )
+    )
+    candidates: list[CvPlayerPolicyInformation] = []
+    search_offset = start
+    while True:
+        candidate_offset = data.find(marker, search_offset, end)
+        if candidate_offset < 0:
+            break
+        candidate = _try_read_policy_information(
+            data,
+            offset=candidate_offset,
+            limit=end,
+            player_index=player_index,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+        search_offset = candidate_offset + 1
+    if len(candidates) != 1:
+        reader = _Reader(data, start, player_index)
+        reader.fail(
+            f"found {len(candidates)} structurally valid policy blocks, expected 1",
+            offset=start,
+            field="policy_information",
+        )
+    return candidates[0]
 
 
 def _skip_exact_hashed_int_array(reader: _Reader, *, count: int, field: str) -> None:
@@ -1146,6 +1297,12 @@ def _read_player(
             field="version",
         )
     prefix_values = tuple(reader.i32(f"prefix[{index}]") for index in range(16))
+    policy_information = _locate_policy_information(
+        data,
+        start=reader.offset,
+        end=headers[0].offset,
+        player_index=player_index,
+    )
 
     city_reader = _Reader(data, headers[0].offset, player_index)
     city_header = read_free_list_header(city_reader, "cities")
@@ -1220,6 +1377,7 @@ def _read_player(
         faith=prefix_values[13],
         faith_ever_generated=prefix_values[14],
         happiness=prefix_values[15],
+        policy_information=policy_information,
         cities=SerializedFreeList(
             byte_offset=city_header.byte_offset,
             byte_length=headers[1].offset - city_header.byte_offset,

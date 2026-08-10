@@ -48,7 +48,13 @@ from ..cv_player import (
 from ..cv_player import (
     decode_player_array_bytes_impl as _decode_player_array_bytes_impl,
 )
-from ..cv_player_types import CvPlayer, SerializedFreeList
+from ..cv_player_types import (
+    CvPlayer,
+    CvPlayerPolicy,
+    CvPlayerPolicyBranch,
+    CvPlayerPolicyInformation,
+    SerializedFreeList,
+)
 from ..cv_plot import (
     CvPlotDecodeError,
 )
@@ -127,6 +133,9 @@ __all__ = (
     "CvCityBuildings",
     "CvPlayer",
     "CvPlayerDecodeError",
+    "CvPlayerPolicy",
+    "CvPlayerPolicyBranch",
+    "CvPlayerPolicyInformation",
     "CvPlot",
     "CvPlotDecodeError",
     "CvTeam",

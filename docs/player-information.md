@@ -24,6 +24,27 @@ The decoder uses those three validated free-list headers, player version
 prefixes, and team population and land totals to bound all 64 player records.
 It does not yet consume every intervening field in source order.
 
+## Confirmed player policy information
+
+Each bounded player contains one `CvPlayerPolicies` version-2 object before its
+city free list. The decoder locates it by validating its repeated hashed-array
+structure rather than assuming a fixed player-relative offset.
+
+The pinned Lekmod v34.11 layout has 138 policy slots. Fourteen slots contain a
+zero hash and therefore have no following value byte; the other entries store
+a four-byte policy hash followed by a one-byte Boolean. The first three arrays
+use identical hash order and save owned, one-shot-fired, and free-unit-fired
+state. Only the owned state is exposed.
+
+The policy arrays are followed by 12 policy-branch entries. The confirmed
+unlocked array stores a four-byte branch hash and one-byte Boolean for every
+branch. Known hashes resolve to keys from `POLICY_BRANCH_TRADITION` through
+`POLICY_BRANCH_AUTOCRACY`.
+
+The examined saves contain additional branch-keyed arrays whose exact meanings
+differ from the bundled source layout. They help validate the policy-block
+location but are not assigned public field names.
+
 ## CvPlayer prefix
 
 All fields below are signed 32-bit integers except the version.
@@ -199,6 +220,7 @@ exposed.
 For `AutoSave_Post_0076 AD-0040.Civ5Save`:
 
 - `CvPlayer[0]` starts at decompressed offset `0x42513D`.
+- Its `CvPlayerPolicies` object starts at decompressed offset `0x428708`.
 - It has population 44, land 56, culture 23,000 hundredths, and faith 62.
 - Its four live cities use slots 0 through 3 and IDs 8192, 16385, 24578, and
   32771.

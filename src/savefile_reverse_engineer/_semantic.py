@@ -1,5 +1,6 @@
 """Convert exact serialization records into the semantic public models."""
 
+from ._cv_policy_hashes import POLICY_BRANCH_BY_POLICY_HASH
 from .civ5_header_types import Civ5SaveHeader as RawCiv5SaveHeader
 from .cv_city_types import (
     CityBuildingState as RawCityBuildingState,
@@ -36,6 +37,8 @@ from .models import (
     GameSettings,
     GameType,
     ObjectReference,
+    PlayerPolicyBranch,
+    PlayerPolicyInformation,
     PlayerSlot,
     PlayerType,
     PlotFlags,
@@ -269,6 +272,33 @@ def _unit(unit: RawCvUnit, owner_player_index: int) -> CvUnit:
     )
 
 
+def _policy_information(player: RawCvPlayer) -> PlayerPolicyInformation:
+    raw_information = player.policy_information
+    owned_policies: list[GameType] = []
+    owned_by_branch: dict[int, list[GameType]] = {}
+    for policy in raw_information.policy_slots:
+        if policy.owned is not True:
+            continue
+        policy_type = _game_type(policy.policy_type)
+        owned_policies.append(policy_type)
+        branch_hash = POLICY_BRANCH_BY_POLICY_HASH.get(policy.policy_type.hash_value)
+        if branch_hash is not None:
+            owned_by_branch.setdefault(branch_hash, []).append(policy_type)
+    return PlayerPolicyInformation(
+        owned_policies=tuple(owned_policies),
+        branches=tuple(
+            PlayerPolicyBranch(
+                branch_type=_game_type(branch.branch_type),
+                unlocked=branch.unlocked,
+                owned_policies=tuple(
+                    owned_by_branch.get(branch.branch_type.hash_value, ())
+                ),
+            )
+            for branch in raw_information.branches
+        ),
+    )
+
+
 def make_player(
     player: RawCvPlayer,
     *,
@@ -299,6 +329,7 @@ def make_player(
         faith=player.faith,
         faith_ever_generated=player.faith_ever_generated,
         happiness=player.happiness,
+        policy_information=_policy_information(player),
         cities=tuple(_city(city, owner) for city in player.cities.entries),
         units=tuple(_unit(unit, owner) for unit in player.units.entries),
     )

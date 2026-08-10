@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .cv_city_types import CvCity
+from .cv_plot_types import HashedType
 from .cv_unit_types import CvUnit
 
 
@@ -19,6 +20,32 @@ class SerializedFreeList[EntryT]:
     current_id: int
     next_free_indices: tuple[int, ...]
     entries: tuple[EntryT, ...]
+
+
+@dataclass(slots=True)
+class CvPlayerPolicy:
+    """One serialized policy slot and its saved ownership state."""
+
+    policy_type: HashedType
+    owned: bool | None
+
+
+@dataclass(slots=True)
+class CvPlayerPolicyBranch:
+    """One serialized policy branch and its confirmed unlocked state."""
+
+    branch_type: HashedType
+    unlocked: bool
+
+
+@dataclass(slots=True)
+class CvPlayerPolicyInformation:
+    """Confirmed fields from one serialized CvPlayerPolicies object."""
+
+    byte_offset: int
+    version: int
+    policy_slots: tuple[CvPlayerPolicy, ...]
+    branches: tuple[CvPlayerPolicyBranch, ...]
 
 
 @dataclass(slots=True)
@@ -45,6 +72,7 @@ class CvPlayer:
     faith: int
     faith_ever_generated: int
     happiness: int
+    policy_information: CvPlayerPolicyInformation
     cities: SerializedFreeList[CvCity]
     units: SerializedFreeList[CvUnit]
 

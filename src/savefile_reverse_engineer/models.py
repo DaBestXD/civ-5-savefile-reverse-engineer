@@ -321,6 +321,23 @@ class CvUnit:
 
 
 @dataclass(frozen=True, slots=True)
+class PlayerPolicyBranch:
+    """One policy branch and the saved policies owned within it."""
+
+    branch_type: GameType
+    unlocked: bool
+    owned_policies: tuple[GameType, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class PlayerPolicyInformation:
+    """Confirmed policy information for one participating player."""
+
+    owned_policies: tuple[GameType, ...]
+    branches: tuple[PlayerPolicyBranch, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class CvPlayer:
     """Confirmed semantic fields for one participating player."""
 
@@ -343,6 +360,7 @@ class CvPlayer:
     faith: int
     faith_ever_generated: int
     happiness: int
+    policy_information: PlayerPolicyInformation
     cities: tuple[CvCity, ...]
     units: tuple[CvUnit, ...]
 
