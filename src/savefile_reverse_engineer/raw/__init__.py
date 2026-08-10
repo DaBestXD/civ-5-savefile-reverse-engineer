@@ -35,7 +35,13 @@ from ..civ5_header_types import (
     WorldInfo,
 )
 from ..civ5_save_decoder import Civ5SavePayloadDecodeError
-from ..cv_city_types import CityBuildingState, CvCity, CvCityBuildings
+from ..cv_city_types import (
+    CityBuildingState,
+    CvCity,
+    CvCityBuildings,
+    ProductionOrder,
+    ProductionOrderType,
+)
 from ..cv_player import (
     CvPlayerDecodeError,
 )
@@ -138,6 +144,8 @@ __all__ = (
     "PlotType",
     "PlotYields",
     "PreGameArchive",
+    "ProductionOrder",
+    "ProductionOrderType",
     "ProjectArt",
     "QuickGameMode",
     "QuickHeader",

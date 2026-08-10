@@ -7,6 +7,7 @@ import pytest
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
     CvPlayerDecodeError,
+    ProductionOrderType,
 )
 from savefile_reverse_engineer._firaxis_hash import firaxis_hash
 from savefile_reverse_engineer.cv_player import (
@@ -16,6 +17,9 @@ from savefile_reverse_engineer.cv_player import (
 from savefile_reverse_engineer.raw import (
     CvCityBuildings,
     decode_player_array_bytes,
+)
+from savefile_reverse_engineer.raw import (
+    ProductionOrderType as RawProductionOrderType,
 )
 
 _PROJECT_ROOT = Path(__file__).parent.parent
@@ -27,6 +31,10 @@ _EARLY_SAVE_PATH = (
 )
 _UNKNOWN_BUILDING_HASH = 0x12345678
 _BUILDING_TYPE_COUNT = 268
+_UNIT_TYPE_COUNT = 265
+_IMPROVEMENT_TYPE_COUNT = 46
+_UNIT_COMBAT_TYPE_COUNT = 18
+_PROMOTION_TYPE_COUNT = 340
 
 _requires_save = pytest.mark.skipif(
     not _SAVE_PATH.is_file(), reason="the local Lekmod v34.11 save is unavailable"
@@ -97,7 +105,7 @@ def test_decodes_semantic_city_fields_and_ownership() -> None:
 
 
 @_requires_save
-def test_decodes_city_building_inventory_and_production() -> None:
+def test_decodes_only_present_city_buildings() -> None:
     cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
 
     second_city_by_name = {
@@ -105,12 +113,66 @@ def test_decodes_city_building_inventory_and_production() -> None:
     }
     capital_by_name = {entry.building_type.key: entry for entry in cities[0].buildings}
 
-    assert len(cities[1].buildings) == _BUILDING_TYPE_COUNT - 4
-    assert all(state.building_type.hash_value != 0 for state in cities[1].buildings)
+    assert [len(city.buildings) for city in cities] == [17, 9, 8, 6]
+    assert all(
+        state.real_count > 0 or state.free_count > 0
+        for city in cities
+        for state in city.buildings
+    )
     assert second_city_by_name["BUILDING_LIBRARY"].real_count == 1
     assert second_city_by_name["BUILDING_LIBRARY"].free_count == 0
     assert second_city_by_name["BUILDING_GRANARY"].real_count == 1
-    assert capital_by_name["BUILDING_GREAT_LIGHTHOUSE"].production_x100 == 7081
+    assert "BUILDING_GREAT_LIGHTHOUSE" not in capital_by_name
+
+
+@_requires_save
+def test_decodes_city_production_queue_and_current_building() -> None:
+    cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
+
+    assert [len(city.production_queue) for city in cities] == [1, 1, 1, 1]
+    assert all(city.current_production == city.production_queue[0] for city in cities)
+    assert [
+        city.current_production.item_type.key
+        for city in cities
+        if city.current_production is not None
+    ] == [
+        "BUILDING_GREAT_LIGHTHOUSE",
+        "BUILDING_CIRCUS",
+        "BUILDING_CHICHEN_ITZA",
+        "BUILDING_LIGHTHOUSE",
+    ]
+    assert all(
+        city.current_production is not None
+        and city.current_production.order_type is ProductionOrderType.CONSTRUCT_BUILDING
+        for city in cities
+    )
+    capital_production = cities[0].current_production
+    assert capital_production is not None
+    assert capital_production.item_type.key == "BUILDING_GREAT_LIGHTHOUSE"
+    assert capital_production.production_x100 == 7081
+    assert capital_production.production_inactive_turns == 0
+
+
+@_requires_early_save
+def test_unit_current_production_has_no_decoded_progress() -> None:
+    cities = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players()).cities
+
+    assert [
+        city.current_production.item_type.key
+        for city in cities
+        if city.current_production is not None
+    ] == ["UNIT_SETTLER", "UNIT_WORKER"]
+    assert all(
+        city.current_production is not None
+        and city.current_production.order_type is ProductionOrderType.TRAIN_UNIT
+        for city in cities
+    )
+    assert all(
+        city.current_production is not None
+        and city.current_production.production_x100 is None
+        and city.current_production.production_inactive_turns is None
+        for city in cities
+    )
 
 
 @_requires_early_save
@@ -119,7 +181,7 @@ def test_writer_guided_city_probe_rejects_false_prefix_markers() -> None:
 
     assert [city.city_id for city in cities] == [8192, 16385]
     assert [(city.x, city.y) for city in cities] == [(11, 16), (16, 14)]
-    assert all(len(city.buildings) == _BUILDING_TYPE_COUNT - 4 for city in cities)
+    assert [len(city.buildings) for city in cities] == [3, 1]
 
 
 @_requires_save
@@ -253,6 +315,64 @@ def _synthetic_city_buildings() -> bytes:
     return header + b"".join(_hashed_int_array(hashes, values) for values in arrays)
 
 
+def _production_order(
+    order_type: RawProductionOrderType,
+    item_hash: int,
+    secondary_data: int,
+    *,
+    save: bool = False,
+    rush: bool = False,
+) -> bytes:
+    return b"".join(
+        (
+            _i32_values((order_type.value,)),
+            item_hash.to_bytes(4, "little"),
+            _i32_values((secondary_data,)),
+            bytes((save, rush)),
+        )
+    )
+
+
+def _synthetic_city_after_buildings() -> bytes:
+    zero_unit_array = _hashed_int_array(
+        tuple(0 for _ in range(_UNIT_TYPE_COUNT)),
+        tuple(None for _ in range(_UNIT_TYPE_COUNT)),
+    )
+    zero_promotion_array = _hashed_int_array(
+        tuple(0 for _ in range(_PROMOTION_TYPE_COUNT)),
+        tuple(None for _ in range(_PROMOTION_TYPE_COUNT)),
+    )
+    orders = (
+        _production_order(
+            RawProductionOrderType.CONSTRUCT_BUILDING,
+            firaxis_hash("BUILDING_GRANARY"),
+            -1,
+        ),
+        _production_order(
+            RawProductionOrderType.TRAIN_UNIT,
+            firaxis_hash("UNIT_SETTLER"),
+            2,
+            save=True,
+        ),
+    )
+    return b"".join(
+        (
+            _i32_values((0, 0)),
+            zero_unit_array,
+            zero_unit_array,
+            *(_int_vector(tuple(0 for _ in range(7))) for _ in range(4)),
+            _int_vector(tuple(0 for _ in range(_IMPROVEMENT_TYPE_COUNT))),
+            *(
+                _int_vector(tuple(0 for _ in range(_UNIT_COMBAT_TYPE_COUNT)))
+                for _ in range(2)
+            ),
+            zero_promotion_array,
+            len(orders).to_bytes(4, "little"),
+            *orders,
+        )
+    )
+
+
 def _synthetic_city_prefix_to_buildings() -> bytes:
     city_prefix = _i32_values((6, 8192, 2, 3, -1, -1, 10, 10, 7, 7, 0, 0, 0, 250, 1))
     return b"".join(
@@ -323,6 +443,7 @@ def _synthetic_player_record(
     if has_objects:
         record.extend(_synthetic_city_prefix_to_buildings())
         record.extend(_synthetic_city_buildings())
+        record.extend(_synthetic_city_after_buildings())
     record.extend(_free_list_header(live=has_objects))
     if has_objects:
         if false_unit_prefix:
@@ -357,6 +478,16 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     zero_entry = entries_by_hash[0]
     assert zero_entry.production_times_100 is None
     assert zero_entry.real_count is None
+    production_queue = players[0].cities.entries[0].production_queue
+    assert [order.order_type for order in production_queue] == [
+        RawProductionOrderType.CONSTRUCT_BUILDING,
+        RawProductionOrderType.TRAIN_UNIT,
+    ]
+    assert production_queue[0].item.name == "BUILDING_GRANARY"
+    assert production_queue[1].item.name == "UNIT_SETTLER"
+    assert production_queue[1].secondary_data == 2
+    assert production_queue[1].save is True
+    assert all(order.byte_length == 14 for order in production_queue)
     assert players[0].units.entries[0].unit_id == 8192
     assert players[0].units.entries[0].unit_hash == firaxis_hash("UNIT_WORKER")
     assert players[0].units.entries[0].unit_name == "UNIT_WORKER"
@@ -368,6 +499,32 @@ def test_bytes_only_decoder_rejects_trailing_data(
 ) -> None:
     with pytest.raises(CvPlayerDecodeError, match="no complete 64-player path"):
         _ = tuple(decode_player_array_bytes(synthetic_player_array + b"extra"))
+
+
+def test_rejects_unknown_city_production_order(
+    synthetic_player_array: bytes,
+) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    order_offset = first_player.cities.entries[0].production_queue[0].byte_offset
+    data = bytearray(synthetic_player_array)
+    data[order_offset : order_offset + 4] = _i32_values((99,))
+
+    with pytest.raises(
+        CvPlayerDecodeError, match="unsupported production order type 99"
+    ):
+        _ = tuple(decode_player_array_bytes(bytes(data)))
+
+
+def test_rejects_city_production_queue_over_capacity(
+    synthetic_player_array: bytes,
+) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    count_offset = first_player.cities.entries[0].production_queue[0].byte_offset - 4
+    data = bytearray(synthetic_player_array)
+    data[count_offset : count_offset + 4] = _i32_values((26,))
+
+    with pytest.raises(CvPlayerDecodeError, match="maximum is 25"):
+        _ = tuple(decode_player_array_bytes(bytes(data)))
 
 
 def test_unit_archive_rejects_false_prefix_marker() -> None:

@@ -1,8 +1,33 @@
 """Public result types for nested Lekmod v34.11 CvCity records."""
 
 from dataclasses import dataclass
+from enum import IntEnum
 
 from .cv_plot_types import HashedType
+
+
+class ProductionOrderType(IntEnum):
+    """Serialized kind of item in a city's production queue."""
+
+    TRAIN_UNIT = 0
+    CONSTRUCT_BUILDING = 1
+    CREATE_PROJECT = 2
+    PREPARE_SPECIALIST = 3
+    MAINTAIN_PROCESS = 4
+
+
+@dataclass(slots=True)
+class ProductionOrder:
+    """One exact entry in a city's serialized production queue."""
+
+    queue_index: int
+    byte_offset: int
+    byte_length: int
+    order_type: ProductionOrderType
+    item: HashedType
+    secondary_data: int
+    save: bool
+    rush: bool
 
 
 @dataclass(slots=True)
@@ -63,6 +88,7 @@ class CvCity:
     culture_stored_times_100: int
     culture_level: int
     buildings: CvCityBuildings
+    production_queue: tuple[ProductionOrder, ...]
 
 
 __all__: tuple[str, ...] = ()

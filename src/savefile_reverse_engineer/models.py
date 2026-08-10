@@ -40,6 +40,16 @@ class PlayerType(IntEnum):
     BARBARIAN = 3
 
 
+class ProductionOrderType(IntEnum):
+    """Kind of item in a city's production queue."""
+
+    TRAIN_UNIT = 0
+    CONSTRUCT_BUILDING = 1
+    CREATE_PROJECT = 2
+    PREPARE_SPECIALIST = 3
+    MAINTAIN_PROCESS = 4
+
+
 class PlotType(IntEnum):
     """A plot's broad map type."""
 
@@ -245,6 +255,19 @@ class CityBuildingState:
 
 
 @dataclass(frozen=True, slots=True)
+class ProductionOrder:
+    """One item in a city's production queue, in queue order."""
+
+    order_type: ProductionOrderType
+    item_type: GameType
+    production_x100: int | None
+    production_inactive_turns: int | None
+    secondary_data: int
+    save: bool
+    rush: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CityBuildingStats:
     """City-wide values stored with the building inventory."""
 
@@ -261,7 +284,7 @@ class CityBuildingStats:
 
 @dataclass(frozen=True, slots=True)
 class CvCity:
-    """Confirmed semantic fields for one city."""
+    """Confirmed semantic fields, including buildings present in one city."""
 
     owner_player_index: int
     city_id: int
@@ -281,6 +304,8 @@ class CvCity:
     culture_level: int
     building_stats: CityBuildingStats
     buildings: tuple[CityBuildingState, ...]
+    current_production: ProductionOrder | None
+    production_queue: tuple[ProductionOrder, ...]
 
 
 @dataclass(frozen=True, slots=True)

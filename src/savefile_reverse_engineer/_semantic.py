@@ -7,6 +7,9 @@ from .cv_city_types import (
 from .cv_city_types import (
     CvCity as RawCvCity,
 )
+from .cv_city_types import (
+    ProductionOrder as RawProductionOrder,
+)
 from .cv_player_types import CvPlayer as RawCvPlayer
 from .cv_plot_types import (
     CvPlot as RawCvPlot,
@@ -38,6 +41,8 @@ from .models import (
     PlotFlags,
     PlotType,
     PlotYields,
+    ProductionOrder,
+    ProductionOrderType,
     RouteType,
     SaveSummary,
     SlotClaim,
@@ -163,14 +168,49 @@ def _building_state(
 ) -> CityBuildingState | None:
     if state.building.hash_value == 0:
         return None
+    real_count = _required(state.real_count, "real count")
+    free_count = _required(state.free_count, "free count")
+    if real_count <= 0 and free_count <= 0:
+        return None
     return CityBuildingState(
         building_type=_game_type(state.building),
         production_x100=_required(state.production_times_100, "production"),
         production_turns=_required(state.production_turns, "production turns"),
         original_owner_player_index=_required(state.original_owner, "original owner"),
         original_year=_required(state.original_year, "original year"),
-        real_count=_required(state.real_count, "real count"),
-        free_count=_required(state.free_count, "free count"),
+        real_count=real_count,
+        free_count=free_count,
+    )
+
+
+def _building_production(
+    city: RawCvCity,
+    order: RawProductionOrder,
+) -> tuple[int | None, int | None]:
+    if order.order_type.value != ProductionOrderType.CONSTRUCT_BUILDING.value:
+        return None, None
+    current_hash = order.item.hash_value
+    for state in city.buildings.entries:
+        if state.building.hash_value == current_hash:
+            return (
+                _required(state.production_times_100, "production"),
+                _required(state.production_turns, "production inactive turns"),
+            )
+    raise ValueError(
+        f"queued building hash 0x{current_hash:08X} is absent from the inventory"
+    )
+
+
+def _production_order(city: RawCvCity, order: RawProductionOrder) -> ProductionOrder:
+    production_x100, production_inactive_turns = _building_production(city, order)
+    return ProductionOrder(
+        order_type=ProductionOrderType(order.order_type.value),
+        item_type=_game_type(order.item),
+        production_x100=production_x100,
+        production_inactive_turns=production_inactive_turns,
+        secondary_data=order.secondary_data,
+        save=order.save,
+        rush=order.rush,
     )
 
 
@@ -181,6 +221,9 @@ def _city(city: RawCvCity, owner_player_index: int) -> CvCity:
         converted = _building_state(state)
         if converted is not None:
             converted_buildings.append(converted)
+    production_queue = tuple(
+        _production_order(city, order) for order in city.production_queue
+    )
     return CvCity(
         owner_player_index=owner_player_index,
         city_id=city.city_id,
@@ -210,6 +253,8 @@ def _city(city: RawCvCity, owner_player_index: int) -> CvCity:
             sold_building_this_turn=inventory.sold_building_this_turn,
         ),
         buildings=tuple(converted_buildings),
+        current_production=(production_queue[0] if production_queue else None),
+        production_queue=production_queue,
     )
 
 

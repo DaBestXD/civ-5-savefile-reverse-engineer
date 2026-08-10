@@ -35,6 +35,9 @@ def test_package_root_exports_only_the_curated_api() -> None:
     assert "SaveSummary" in exports
     assert "GameSettings" in exports
     assert "PlayerType" in exports
+    assert "ProductionOrder" in exports
+    assert "ProductionOrderType" in exports
+    assert "BuildingProduction" not in exports
     assert "SerializedFreeList" not in exports
     assert "CompressedChunk" not in exports
     assert "UnknownHeaderSpan" not in exports
@@ -54,6 +57,8 @@ def test_raw_namespace_exports_exact_decoders_and_records() -> None:
         "decode_player_array_bytes",
         "Civ5SaveHeader",
         "SerializedFreeList",
+        "ProductionOrder",
+        "ProductionOrderType",
     } <= exports
     assert all(not name.startswith("_") for name in exports)
 

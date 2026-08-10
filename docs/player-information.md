@@ -144,8 +144,29 @@ value and use `None` for the name. A zero-hash placeholder has no serialized
 integer value.
 
 The public `CvCityBuildings.inventory_byte_length` ends after these arrays.
-The following building yield changes and Great Work assignments are not yet
-decoded.
+The following building yield changes and Great Work assignments are skipped
+but are not yet exposed.
+
+## Confirmed city production queue
+
+The decoder follows the remaining source-order containers after
+`CvCityBuildings` to reach `m_orderQueue`: two hashed unit-production arrays,
+seven integer vectors, and a hashed free-promotion array. These intervening
+containers are validated but not exposed.
+
+The queue begins with a four-byte entry count. Each entry then contains:
+
+| Order | Field |
+|---:|---|
+| 1 | Four-byte `ProductionOrderType` value |
+| 2 | Four-byte database type hash for the item |
+| 3 | Four-byte secondary data value |
+| 4 | One-byte save flag |
+| 5 | One-byte rush flag |
+
+The first entry is the city's current production. The remaining entries are
+queued. `CvCity.production_queue` preserves this order, resolves known unit,
+building, and project hashes, and retains unknown hashes with a `None` name.
 
 ## Confirmed CvUnit prefix
 

@@ -20,9 +20,15 @@ for player in decoder.iter_players():
     )
     for city in player.cities:
         print(city.owner_player_index, city.city_id, city.name_key, city.population)
+        if city.current_production is not None:
+            print("producing", city.current_production.item_type.key)
+            if city.current_production.production_x100 is not None:
+                print(
+                    "building progress",
+                    city.current_production.production_x100 / 100,
+                )
         for state in city.buildings:
-            if state.real_count > 0 or state.free_count > 0:
-                print(state.building_type.key)
+            print(state.building_type.key)
     for unit in player.units:
         print(
             decoder.get_owner_display_name(unit),
@@ -65,8 +71,23 @@ remaining city uses `None`.
 `CITY_STATE`, or `BARBARIAN`.
 
 Semantic records omit byte locations, serialization versions, free-list slot
-metadata, and zero-hash building placeholders. City-wide building values are
-available through `city.building_stats`.
+metadata, zero-hash building placeholders, and building types that are not
+present in a city. `city.buildings` includes a state when its `real_count` or
+`free_count` is positive. This can include active internal or dummy buildings.
+City-wide building values are available through `city.building_stats`.
+
+Use the raw city record's `buildings.entries` inventory for absent building
+types and saved production toward buildings that are not yet present.
+
+`city.production_queue` contains every saved production order in queue order.
+Its entries use `ProductionOrderType` to distinguish units, buildings,
+projects, specialists, and processes. `city.current_production` is the first
+queue entry, or `None` when the queue is empty.
+
+Every semantic production order has optional `production_x100` progress and
+`production_inactive_turns` decay-counter fields. They contain integers for a
+building order and are `None` for other order types whose progress is not yet
+decoded. Divide `production_x100` by 100 to obtain ordinary production points.
 
 ## Exact raw records
 
@@ -79,11 +100,13 @@ players = tuple(decode_player_array_bytes(exact_player_array_bytes))
 print(players[0].byte_offset)
 print(players[0].cities.slot_count)
 print(players[0].cities.entries[0].buildings.version)
+print(players[0].cities.entries[0].production_queue)
 ```
 
 The input must contain exactly 64 player records and no leading or trailing
 data. Raw results preserve live-slot order, deleted-slot metadata, exact record
-boundaries, and all 268 building inventory slots.
+boundaries, all 268 building inventory slots, and exact production queue
+entries.
 
 Malformed records raise `CvPlayerDecodeError` with `player_index`, `offset`,
 and `field` context.

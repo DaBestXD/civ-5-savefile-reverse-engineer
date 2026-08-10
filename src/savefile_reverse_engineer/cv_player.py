@@ -8,12 +8,19 @@ from typing import NoReturn, override
 
 from ._binary_reader import LittleEndianReader
 from ._cv_building_hashes import BUILDING_HASH_NAMES
+from ._cv_production_hashes import PROJECT_HASH_NAMES
 from ._cv_unit_hashes import UNIT_HASH_NAMES
 from ._free_list import (
     FREE_LIST_INDEX_MASK,
     read_free_list_header,
 )
-from .cv_city_types import CityBuildingState, CvCity, CvCityBuildings
+from .cv_city_types import (
+    CityBuildingState,
+    CvCity,
+    CvCityBuildings,
+    ProductionOrder,
+    ProductionOrderType,
+)
 from .cv_player_types import CvPlayer, SerializedFreeList
 from .cv_plot_types import HashedType
 from .cv_unit_types import CvUnit
@@ -30,6 +37,8 @@ _CITY_PLAYER_COUNT = 80
 _CITY_RESOURCE_COUNT = 57
 _CITY_SPECIALIST_COUNT = 7
 _CITY_PROJECT_COUNT = 6
+_CITY_UNIT_TYPE_COUNT = 265
+_CITY_IMPROVEMENT_COUNT = 46
 _CITY_SCALARS_AFTER_PREFIX = 44
 _CITY_FLAGS_AFTER_SCALARS = 10
 _CITY_OWNER_FIELDS = 4
@@ -51,6 +60,7 @@ _UNIT_TERRAIN_COUNT = 9
 _UNIT_FEATURE_COUNT = 25
 _UNIT_COMBAT_COUNT = 18
 _UNIT_CLASS_COUNT = 113
+_CITY_PRODUCTION_QUEUE_CAPACITY = 25
 
 
 class CvPlayerDecodeError(ValueError):
@@ -413,6 +423,11 @@ def _skip_exact_hashed_int_array(reader: _Reader, *, count: int, field: str) -> 
         hash_value = reader.u32(f"{field}[{index}].type")
         if hash_value != 0:
             _ = reader.i32(f"{field}[{index}].value")
+
+
+def _skip_struct_vector(reader: _Reader, *, item_size: int, field: str) -> None:
+    count = reader.u32(f"{field}.count")
+    _ = reader.read_bytes(count * item_size, f"{field}.entries")
 
 
 def _try_locate_city_buildings(
@@ -896,6 +911,114 @@ def _read_city_buildings(
     )
 
 
+def _production_item_name(
+    order_type: ProductionOrderType, hash_value: int
+) -> str | None:
+    if order_type is ProductionOrderType.TRAIN_UNIT:
+        return UNIT_HASH_NAMES.get(hash_value)
+    if order_type is ProductionOrderType.CONSTRUCT_BUILDING:
+        return BUILDING_HASH_NAMES.get(hash_value)
+    if order_type is ProductionOrderType.CREATE_PROJECT:
+        return PROJECT_HASH_NAMES.get(hash_value)
+    return None
+
+
+def _read_city_production_queue(
+    data: bytes,
+    *,
+    start: int,
+    end: int,
+    record_index: int,
+    player_index: int,
+) -> tuple[ProductionOrder, ...]:
+    reader = _Reader(data, start, player_index)
+    field = f"cities.entries[{record_index}]"
+
+    _skip_struct_vector(
+        reader,
+        item_size=3 * 4,
+        field=f"{field}.buildings.yield_changes",
+    )
+    _skip_struct_vector(
+        reader,
+        item_size=3 * 4,
+        field=f"{field}.buildings.great_works",
+    )
+    for array_name in ("unit_production", "unit_production_time"):
+        _skip_exact_hashed_int_array(
+            reader,
+            count=_CITY_UNIT_TYPE_COUNT,
+            field=f"{field}.{array_name}",
+        )
+    for vector_name, count in (
+        ("specialist_count", _CITY_SPECIALIST_COUNT),
+        ("maximum_specialist_count", _CITY_SPECIALIST_COUNT),
+        ("forced_specialist_count", _CITY_SPECIALIST_COUNT),
+        ("free_specialist_count", _CITY_SPECIALIST_COUNT),
+        ("improvement_free_specialists", _CITY_IMPROVEMENT_COUNT),
+        ("unit_combat_free_experience", _UNIT_COMBAT_COUNT),
+        ("unit_combat_production_modifier", _UNIT_COMBAT_COUNT),
+    ):
+        _skip_exact_int_vector(
+            reader,
+            count=count,
+            field=f"{field}.{vector_name}",
+        )
+    _skip_exact_hashed_int_array(
+        reader,
+        count=_UNIT_SELECTED_PROMOTION_COUNT,
+        field=f"{field}.free_promotion_count",
+    )
+
+    count_offset = reader.offset
+    count = reader.u32(f"{field}.production_queue.count")
+    if count > _CITY_PRODUCTION_QUEUE_CAPACITY:
+        reader.fail(
+            (f"saved count is {count}, maximum is {_CITY_PRODUCTION_QUEUE_CAPACITY}"),
+            offset=count_offset,
+            field=f"{field}.production_queue.count",
+        )
+    orders: list[ProductionOrder] = []
+    for queue_index in range(count):
+        order_start = reader.offset
+        order_field = f"{field}.production_queue[{queue_index}]"
+        order_value = reader.i32(f"{order_field}.order_type")
+        try:
+            order_type = ProductionOrderType(order_value)
+        except ValueError:
+            reader.fail(
+                f"unsupported production order type {order_value}",
+                offset=order_start,
+                field=f"{order_field}.order_type",
+            )
+        hash_value = reader.u32(f"{order_field}.item")
+        secondary_data = reader.i32(f"{order_field}.secondary_data")
+        save = reader.read_bool(f"{order_field}.save")
+        rush = reader.read_bool(f"{order_field}.rush")
+        orders.append(
+            ProductionOrder(
+                queue_index=queue_index,
+                byte_offset=order_start,
+                byte_length=reader.offset - order_start,
+                order_type=order_type,
+                item=HashedType(
+                    hash_value=hash_value,
+                    name=_production_item_name(order_type, hash_value),
+                ),
+                secondary_data=secondary_data,
+                save=save,
+                rush=rush,
+            )
+        )
+    if reader.offset > end:
+        reader.fail(
+            "production queue extends beyond the city record",
+            offset=end,
+            field=f"{field}.production_queue",
+        )
+    return tuple(orders)
+
+
 def _read_city(
     data: bytes,
     *,
@@ -929,6 +1052,13 @@ def _read_city(
         record_index=record_index,
         player_index=player_index,
     )
+    production_queue = _read_city_production_queue(
+        data,
+        start=buildings.byte_offset + buildings.inventory_byte_length,
+        end=end,
+        record_index=record_index,
+        player_index=player_index,
+    )
     return CvCity(
         record_index=record_index,
         slot_index=slot_index,
@@ -951,6 +1081,7 @@ def _read_city(
         culture_stored_times_100=reader.i32(f"{field}.culture_stored_times_100"),
         culture_level=reader.i32(f"{field}.culture_level"),
         buildings=buildings,
+        production_queue=production_queue,
     )
 
 
