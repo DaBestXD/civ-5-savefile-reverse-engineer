@@ -5,18 +5,20 @@ from pathlib import Path
 
 import pytest
 
-from savefile_reverse_engineer._cv_plot_hashes import (
+from savefile_reverse_engineer._raw._catalogue.plots import (
     BUILD_HASH_NAMES,
     IMPROVEMENT_HASH_NAMES,
     RESOURCE_HASH_NAMES,
 )
-from savefile_reverse_engineer._cv_team_hashes import TEAM_HASH_NAMES
-from savefile_reverse_engineer.raw import (
-    CvTeam,
+from savefile_reverse_engineer._raw._catalogue.teams import TEAM_HASH_NAMES
+from savefile_reverse_engineer._raw._shared.types import RouteType
+from savefile_reverse_engineer._raw.team.decoder import (
     CvTeamDecodeError,
-    RouteType,
-    decode_team_array_bytes,
 )
+from savefile_reverse_engineer._raw.team.decoder import (
+    decode_team_array_bytes_impl as decode_team_array_bytes,
+)
+from savefile_reverse_engineer._raw.team.models import CvTeam
 from tests._binary_helpers import replace_unsigned
 
 _FIXTURE_PATH = Path(__file__).parent / "test_data/cv_team/turn_76_team_array.bin"

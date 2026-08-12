@@ -4,7 +4,7 @@ import math
 
 import pytest
 
-from savefile_reverse_engineer._binary_reader import (
+from savefile_reverse_engineer._raw._shared.binary_reader import (
     BinaryReadError,
     LittleEndianReader,
 )
@@ -47,6 +47,7 @@ def test_rejects_invalid_boolean_utf8_and_truncation() -> None:
         _ = LittleEndianReader(b"\x02").read_bool("flag")
     assert boolean.value.offset == 0
     assert boolean.value.field == "flag"
+    assert boolean.value.message == str(boolean.value)
 
     with pytest.raises(BinaryReadError, match="valid UTF-8") as utf8:
         _ = LittleEndianReader(b"\x01\x00\x00\x00\xff").read_utf8("text")

@@ -1,6 +1,6 @@
 # Player, city, and unit API
 
-`Civ5SaveDecoder.iter_players` returns semantic records for player slots marked
+`Civ5SaveDecoder.players` returns semantic records for player slots marked
 `TAKEN` or `COMPUTER`. This includes defeated participants whose city and unit
 tuples may be empty. The decoder does not infer alive status.
 
@@ -10,7 +10,7 @@ from savefile_reverse_engineer import Civ5SaveDecoder
 decoder = Civ5SaveDecoder("AutoSave.Civ5Save")
 print(decoder.player_display_names[0])
 
-for player in decoder.iter_players():
+for player in decoder.players:
     print(
         player.player_index,
         player.player_type,
@@ -46,17 +46,16 @@ for player in decoder.iter_players():
         )
 ```
 
-`iter_cities()` and `iter_units()` flatten the participant-owned nested
+`cities` and `units` flatten the participant-owned nested
 records. Every returned city and unit carries its `owner_player_index`.
 Each city also provides the saved localization key through `city.name_key`,
 for example `TXT_KEY_CITY_NAME_VENEZ`.
 
-Each semantic `iter_*()` result is cached after its iterator is consumed
-successfully. Later calls return fresh iterators over the same immutable
-objects. A partially consumed or failed iteration is not cached.
+Each semantic collection is an immutable, identity-cached tuple. A failed
+property access is not cached.
 
 `player_display_names` is a cached, read-only mapping from every participating
-player index to the same resolved `display_name` exposed by `iter_players()`.
+player index to the same resolved `display_name` exposed by `players`.
 Its values can be `None` when the save does not contain enough information to
 resolve a display name.
 
@@ -94,8 +93,8 @@ present in a city. `city.buildings` includes a state when its `real_count` or
 `free_count` is positive. This can include active internal or dummy buildings.
 City-wide building values are available through `city.building_stats`.
 
-Use the raw city record's `buildings.entries` inventory for absent building
-types and saved production toward buildings that are not yet present.
+The public model omits absent building types and saved production toward
+buildings that are not yet present.
 
 `city.production_queue` contains every saved production order in queue order.
 Its entries use `ProductionOrderType` to distinguish units, buildings,
@@ -119,7 +118,7 @@ For example, the saved building and ordinary-population science components are
 available without reconstructing them from the building catalogue:
 
 ```python
-for city in decoder.iter_cities():
+for city in decoder.cities:
     vectors = city.yield_vectors
     print(
         city.name_key,
@@ -132,25 +131,6 @@ for city in decoder.iter_cities():
 These are saved intermediate values, not a precomputed final yield. Final city
 science can also depend on city status, owner and area modifiers, active
 garrison state, Great Works, production conversion, and trade routes.
-
-## Exact raw records
-
-Use the raw decoder when all 64 records or free-list metadata are required:
-
-```python
-from savefile_reverse_engineer.raw import decode_player_array_bytes
-
-players = tuple(decode_player_array_bytes(exact_player_array_bytes))
-print(players[0].byte_offset)
-print(players[0].cities.slot_count)
-print(players[0].cities.entries[0].buildings.version)
-print(players[0].cities.entries[0].production_queue)
-```
-
-The input must contain exactly 64 player records and no leading or trailing
-data. Raw results preserve live-slot order, deleted-slot metadata, exact record
-boundaries, all 268 building inventory slots, and exact production queue
-entries.
 
 Malformed records raise `CvPlayerDecodeError` with `player_index`, `offset`,
 and `field` context.

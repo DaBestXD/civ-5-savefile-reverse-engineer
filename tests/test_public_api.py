@@ -1,13 +1,18 @@
-"""Tests for the curated semantic and advanced raw API surfaces."""
+"""Tests for the curated public semantic API surfaces."""
 
 from dataclasses import fields
-from importlib import import_module
+from importlib.util import find_spec
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 
 import savefile_reverse_engineer as public_api
-import savefile_reverse_engineer.raw as raw_api
+import savefile_reverse_engineer.errors as errors_api
+import savefile_reverse_engineer.game as game_api
+import savefile_reverse_engineer.map as map_api
+import savefile_reverse_engineer.player as player_api
+import savefile_reverse_engineer.team as team_api
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
     GameMode,
@@ -23,7 +28,7 @@ _SINGLE_PLAYER_PATH = (
     _PROJECT_ROOT / "test-save-file/single-player/j-AutoSave_0040 BC-1600.Civ5Save"
 )
 
-pytestmark = pytest.mark.skipif(
+_requires_save = pytest.mark.skipif(
     not _SAVE_PATH.is_file(), reason="the local Lekmod v34.11 save is unavailable"
 )
 
@@ -31,75 +36,145 @@ pytestmark = pytest.mark.skipif(
 def test_package_root_exports_only_the_curated_api() -> None:
     exports = set(public_api.__all__)
 
-    assert "Civ5SaveDecoder" in exports
-    assert "SaveSummary" in exports
-    assert "GameSettings" in exports
-    assert "PlayerType" in exports
-    assert "ProductionOrder" in exports
-    assert "ProductionOrderType" in exports
-    assert "CityYieldValues" in exports
-    assert "CityYieldVectors" in exports
-    assert "PlayerPolicyBranch" in exports
-    assert "PlayerPolicyInformation" in exports
-    assert "TeamTechnology" in exports
-    assert "BuildingProduction" not in exports
-    assert "SerializedFreeList" not in exports
-    assert "CompressedChunk" not in exports
-    assert "UnknownHeaderSpan" not in exports
-    assert "PreGameArchive" not in exports
-    assert "ObjectReference" not in exports
-    assert "PlotFlags" not in exports
-
-
-def test_raw_namespace_exports_exact_decoders_and_records() -> None:
-    exports = set(raw_api.__all__)
-
-    assert {
-        "decode_header_bytes",
-        "decompress_payload_bytes",
-        "decode_plot_array_bytes",
-        "decode_team_array_bytes",
-        "decode_player_array_bytes",
-        "Civ5SaveHeader",
-        "SerializedFreeList",
-        "ProductionOrder",
-        "ProductionOrderType",
-        "CvPlayerPolicy",
-        "CvPlayerPolicyBranch",
-        "CvPlayerPolicyInformation",
+    assert exports == {
         "CityYieldValues",
         "CityYieldVectors",
-    } <= exports
-    assert all(not name.startswith("_") for name in exports)
+        "Civ5SaveDecoder",
+        "Civ5SaveHeaderDecodeError",
+        "Civ5SavePayloadDecodeError",
+        "Civ5SavePayloadDecompressionError",
+        "CvCity",
+        "CvPlayer",
+        "CvPlayerDecodeError",
+        "CvPlot",
+        "CvPlotDecodeError",
+        "CvTeam",
+        "CvTeamDecodeError",
+        "CvUnit",
+        "GameMode",
+        "GameSettings",
+        "GameType",
+        "PlayerPolicyBranch",
+        "PlayerPolicyInformation",
+        "PlayerSlot",
+        "PlayerType",
+        "PlotType",
+        "ProductionOrder",
+        "ProductionOrderType",
+        "RouteType",
+        "SaveSummary",
+        "SlotClaim",
+        "SlotStatus",
+        "TeamTechnology",
+        "TerrainType",
+    }
+
+
+def test_domain_modules_export_only_their_public_models() -> None:
+    assert set(game_api.__all__) == {
+        "EnabledContent",
+        "GameMode",
+        "GameOption",
+        "GameSettings",
+        "GameType",
+        "PlayerSlot",
+        "SaveSummary",
+        "SlotClaim",
+        "SlotStatus",
+        "WorldSettings",
+    }
+    assert set(map_api.__all__) == {
+        "CvPlot",
+        "FlowDirection",
+        "ObjectReference",
+        "PlotFlags",
+        "PlotType",
+        "PlotYields",
+        "RouteType",
+        "TerrainType",
+    }
+    assert set(player_api.__all__) == {
+        "CityBuildingState",
+        "CityBuildingStats",
+        "CityYieldValues",
+        "CityYieldVectors",
+        "CvCity",
+        "CvPlayer",
+        "CvUnit",
+        "PlayerPolicyBranch",
+        "PlayerPolicyInformation",
+        "PlayerType",
+        "ProductionOrder",
+        "ProductionOrderType",
+    }
+    assert set(team_api.__all__) == {"CvTeam", "TeamTechnology"}
+    assert set(errors_api.__all__) == {
+        "Civ5SaveHeaderDecodeError",
+        "Civ5SavePayloadDecodeError",
+        "Civ5SavePayloadDecompressionError",
+        "CvPlayerDecodeError",
+        "CvPlotDecodeError",
+        "CvTeamDecodeError",
+    }
+
+
+def test_former_public_raw_namespace_is_absent() -> None:
+    assert find_spec("savefile_reverse_engineer.raw") is None
 
 
 def test_old_byte_decoder_import_names_are_removed() -> None:
-    plot_module = import_module("savefile_reverse_engineer.cv_plot")
-    team_module = import_module("savefile_reverse_engineer.cv_team")
-    player_module = import_module("savefile_reverse_engineer.cv_player")
-
-    assert not hasattr(plot_module, "decode_cv_plot_array_bytes")
-    assert not hasattr(team_module, "decode_cv_team_array_bytes")
-    assert not hasattr(player_module, "decode_cv_player_array_bytes")
+    assert find_spec("savefile_reverse_engineer.civ5_header") is None
+    assert find_spec("savefile_reverse_engineer.cv_plot") is None
+    assert find_spec("savefile_reverse_engineer.cv_team") is None
+    assert find_spec("savefile_reverse_engineer.cv_player") is None
 
 
-def test_raw_header_and_payload_functions_match_the_decoder() -> None:
+@_requires_save
+def test_decoder_does_not_expose_raw_header_or_payload() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    save_bytes = _SAVE_PATH.read_bytes()
-    header = raw_api.decode_header_bytes(save_bytes)
 
-    assert header == decoder.raw_header
-    assert raw_api.decompress_payload_bytes(save_bytes, header) == decoder.payload_bytes
+    assert not hasattr(decoder, "raw_header")
+    assert not hasattr(decoder, "payload_bytes")
+    assert not any(
+        hasattr(decoder, name)
+        for name in (
+            "iter_players",
+            "iter_teams",
+            "iter_plots",
+            "iter_cities",
+            "iter_units",
+        )
+    )
 
 
+def test_public_decoder_annotations_do_not_expose_raw_types() -> None:
+    public_getters = (
+        Civ5SaveDecoder.summary.fget,
+        Civ5SaveDecoder.settings.fget,
+        Civ5SaveDecoder.player_slots.fget,
+        Civ5SaveDecoder.plots.fget,
+        Civ5SaveDecoder.teams.fget,
+        Civ5SaveDecoder.players.fget,
+        Civ5SaveDecoder.player_display_names.fget,
+        Civ5SaveDecoder.cities.fget,
+        Civ5SaveDecoder.units.fget,
+    )
+    for getter in public_getters:
+        assert getter is not None
+        annotations = get_type_hints(getter)
+        assert "savefile_reverse_engineer._raw" not in repr(annotations)
+
+    method_annotations = get_type_hints(Civ5SaveDecoder.get_owner_display_name)
+    assert "savefile_reverse_engineer._raw" not in repr(method_annotations)
+
+
+@_requires_save
 def test_summary_settings_and_slots_are_cached_semantic_views() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
 
     assert decoder.summary is decoder.summary
     assert decoder.settings is decoder.settings
     assert decoder.player_slots is decoder.player_slots
-    assert decoder.raw_header is decoder.raw_header
-    assert decoder.payload_bytes is decoder.payload_bytes
 
     assert decoder.summary.turn == 76
     assert decoder.summary.game_mode is GameMode.MULTIPLAYER
@@ -112,6 +187,7 @@ def test_summary_settings_and_slots_are_cached_semantic_views() -> None:
     assert decoder.player_slots[0].status is SlotStatus.TAKEN
 
 
+@_requires_save
 def test_settings_omit_sensitive_and_format_only_fields() -> None:
     field_names = {field.name for field in fields(Civ5SaveDecoder(_SAVE_PATH).settings)}
 
@@ -122,43 +198,46 @@ def test_settings_omit_sensitive_and_format_only_fields() -> None:
     assert "version" not in field_names
 
 
-def test_city_and_unit_iterators_preserve_semantic_ownership() -> None:
+@_requires_save
+def test_city_and_unit_properties_preserve_semantic_ownership() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    cities = tuple(decoder.iter_cities())
-    units = tuple(decoder.iter_units())
+    cities = decoder.cities
+    units = decoder.units
 
     assert cities
     assert units
     assert all(city.owner_player_index >= 0 for city in cities)
     assert cities[0].name_key == "TXT_KEY_CITY_NAME_VENEZ"
     assert all(unit.owner_player_index >= 0 for unit in units)
-    assert cities[0] is next(decoder.iter_cities())
-    assert units[0] is next(decoder.iter_units())
-    assert cities[0] is next(decoder.iter_players()).cities[0]
+    assert decoder.cities is cities
+    assert decoder.units is units
+    assert cities[0] is decoder.players[0].cities[0]
     assert decoder.get_owner_display_name(cities[0]) == "Brad, From Algebra"
     assert decoder.get_owner_display_name(units[0]) == "Brad, From Algebra"
 
 
+@_requires_save
 def test_get_owner_display_name_supports_plots_and_loads_players() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    plots = tuple(decoder.iter_plots())
+    plots = decoder.plots
     owned_plot = next(plot for plot in plots if plot.owner_player_index == 0)
     unowned_plot = next(plot for plot in plots if plot.owner_player_index < 0)
 
     assert decoder.get_owner_display_name(owned_plot) == "Brad, From Algebra"
     assert decoder.get_owner_display_name(unowned_plot) is None
-    assert next(decoder.iter_players()).display_name == "Brad, From Algebra"
+    assert decoder.players[0].display_name == "Brad, From Algebra"
 
 
-def test_player_iterator_includes_saved_display_names() -> None:
+@_requires_save
+def test_player_property_includes_saved_display_names() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    players = tuple(decoder.iter_players())
+    players = decoder.players
 
     assert players[0].display_name == "Brad, From Algebra"
     assert players[0].player_type is PlayerType.PLAYER
     assert players[3].display_name == "TXT_KEY_CITYSTATE_MEXICO"
     assert players[3].player_type is PlayerType.CITY_STATE
-    assert next(decoder.iter_players()) is players[0]
+    assert decoder.players is players
     assert decoder.player_display_names is decoder.player_display_names
     assert decoder.player_display_names[0] == "Brad, From Algebra"
     assert decoder.player_display_names[22] == "TXT_KEY_CITYSTATE_MEXICO"
@@ -173,7 +252,7 @@ def test_player_iterator_includes_saved_display_names() -> None:
 )
 def test_computer_display_names_use_leader_or_city_name_keys() -> None:
     decoder = Civ5SaveDecoder(_SINGLE_PLAYER_PATH)
-    players = {player.player_index: player for player in decoder.iter_players()}
+    players = {player.player_index: player for player in decoder.players}
 
     assert players[1].display_name == "LEADER_MACEDON"
     assert players[1].player_type is PlayerType.COMPUTER

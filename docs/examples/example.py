@@ -1,4 +1,3 @@
-from itertools import islice
 from pathlib import Path
 
 from savefile_reverse_engineer import Civ5SaveDecoder
@@ -7,7 +6,7 @@ from savefile_reverse_engineer import Civ5SaveDecoder
 def main() -> None:
     path = Path(__file__).parent / "example_save.Civ5Save"
     decoder = Civ5SaveDecoder(path)
-    for p in islice(decoder.iter_players(), 3):
+    for p in decoder.players[:3]:
         print("-" * 100)
         print(p.display_name)
         for c in p.cities:

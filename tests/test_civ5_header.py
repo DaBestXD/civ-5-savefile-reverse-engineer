@@ -6,10 +6,15 @@ import pytest
 
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
+)
+from savefile_reverse_engineer._raw.header.decoder import (
     Civ5SaveHeaderDecodeError,
     Civ5SavePayloadDecompressionError,
+    decode_header_bytes_impl,
+    decompress_payload_bytes_impl,
 )
-from savefile_reverse_engineer.raw import (
+from savefile_reverse_engineer._raw.header.models import (
+    Civ5SaveHeader,
     QuickGameMode,
     SlotClaim,
     SlotStatus,
@@ -33,15 +38,12 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _decoder_for_bytes(tmp_path: Path, data: bytes, name: str) -> Civ5SaveDecoder:
-    path = tmp_path / name
-    _ = path.write_bytes(data)
-    return Civ5SaveDecoder(path)
+def _decode(path: Path) -> Civ5SaveHeader:
+    return decode_header_bytes_impl(path.read_bytes())
 
 
 def test_decodes_multiplayer_quick_header_and_chunk_boundary() -> None:
-    decoder = Civ5SaveDecoder(_MULTIPLAYER_PATH)
-    header = decoder.raw_header
+    header = _decode(_MULTIPLAYER_PATH)
     quick = header.quick
 
     assert quick.signature == "CIV5"
@@ -62,10 +64,6 @@ def test_decodes_multiplayer_quick_header_and_chunk_boundary() -> None:
     assert header.compression_type == 2
     assert len(header.compressed_chunks) == 14
     assert header.compressed_chunks[0].length == 0x10000
-    assert decoder.raw_header is header
-
-    string_path_decoder = Civ5SaveDecoder(str(_MULTIPLAYER_PATH))
-    assert string_path_decoder.raw_header.quick.turn == 70
 
 
 def test_constructor_keeps_one_file_snapshot(tmp_path: Path) -> None:
@@ -75,11 +73,11 @@ def test_constructor_keeps_one_file_snapshot(tmp_path: Path) -> None:
 
     _ = path.write_bytes(b"NOPE")
 
-    assert decoder.raw_header.quick.turn == 70
+    assert decoder.summary.turn == 70
 
 
 def test_decodes_multiplayer_slots_and_account_metadata() -> None:
-    players = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header.slot_hints.players
+    players = _decode(_MULTIPLAYER_PATH).slot_hints.players
 
     assert len(players) == 64
     for player in players[:3]:
@@ -100,7 +98,7 @@ def test_decodes_multiplayer_slots_and_account_metadata() -> None:
 
 
 def test_decodes_complete_pregame_archive() -> None:
-    pregame = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header.pregame
+    pregame = _decode(_MULTIPLAYER_PATH).pregame
 
     assert pregame.version == 6
     assert pregame.active_player == 1
@@ -119,7 +117,7 @@ def test_decodes_complete_pregame_archive() -> None:
 
 
 def test_decodes_single_player_without_inferring_mod_version() -> None:
-    header = Civ5SaveDecoder(_SINGLE_PLAYER_PATH).raw_header
+    header = _decode(_SINGLE_PLAYER_PATH)
     quick = header.quick
 
     assert quick.turn == 4
@@ -136,7 +134,7 @@ def test_decodes_single_player_without_inferring_mod_version() -> None:
 
 
 def test_preserves_unknown_bridge_spans() -> None:
-    header = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header
+    header = _decode(_MULTIPLAYER_PATH)
     spans = header.unknown_spans
 
     assert len(spans) == 4
@@ -146,9 +144,9 @@ def test_preserves_unknown_bridge_spans() -> None:
         assert span.data == _MULTIPLAYER_PATH.read_bytes()[start:end]
 
 
-def test_boundary_is_structural_and_supports_multiple_chunks(tmp_path: Path) -> None:
+def test_boundary_is_structural_and_supports_multiple_chunks() -> None:
     data = _MULTIPLAYER_PATH.read_bytes()
-    decoded = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header
+    decoded = _decode(_MULTIPLAYER_PATH)
     header_end = decoded.header_length
     metadata_offset = decoded.unknown_spans[2].byte_offset
     data_with_embedded_zlib = (
@@ -156,11 +154,7 @@ def test_boundary_is_structural_and_supports_multiple_chunks(tmp_path: Path) -> 
     )
     synthetic_tail = b"\x04\x00\x00\x00\x78\x9cAA\x03\x00\x00\x00BBB"
 
-    result = _decoder_for_bytes(
-        tmp_path,
-        data_with_embedded_zlib + synthetic_tail,
-        "multiple-chunks.Civ5Save",
-    ).raw_header
+    result = decode_header_bytes_impl(data_with_embedded_zlib + synthetic_tail)
 
     assert result.zlib_offset == header_end + 4
     assert len(result.compressed_chunks) == 2
@@ -168,60 +162,42 @@ def test_boundary_is_structural_and_supports_multiple_chunks(tmp_path: Path) -> 
 
 
 def test_decompresses_complete_payload_across_physical_chunks() -> None:
-    decoder = Civ5SaveDecoder(_MULTIPLAYER_PATH)
-    payload = decoder.payload_bytes
+    save_bytes = _MULTIPLAYER_PATH.read_bytes()
+    payload = decompress_payload_bytes_impl(
+        save_bytes, decode_header_bytes_impl(save_bytes)
+    )
 
     assert payload[:4] == b"\x01\x00\x00\x00"
     assert int.from_bytes(payload[8:12], byteorder="little", signed=True) == 70
     assert len(payload) > 0x42328D
-    assert decoder.payload_bytes is payload
 
 
-def test_rejects_an_invalid_compressed_payload(tmp_path: Path) -> None:
+def test_rejects_an_invalid_compressed_payload() -> None:
     data = _MULTIPLAYER_PATH.read_bytes()
-    header_end = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header.header_length
+    header_end = _decode(_MULTIPLAYER_PATH).header_length
     malformed_chunk = b"\x03\x00\x00\x00\x78\x9c\xff"
-    decoder = _decoder_for_bytes(
-        tmp_path, data[:header_end] + malformed_chunk, "invalid-zlib.Civ5Save"
-    )
+    malformed_save = data[:header_end] + malformed_chunk
+    header = decode_header_bytes_impl(malformed_save)
 
     with pytest.raises(Civ5SavePayloadDecompressionError, match="zlib payload"):
-        _ = decoder.payload_bytes
+        _ = decompress_payload_bytes_impl(malformed_save, header)
 
 
-def test_rejects_invalid_signature_version_and_chunks(tmp_path: Path) -> None:
+def test_rejects_invalid_signature_version_and_chunks() -> None:
     data = _MULTIPLAYER_PATH.read_bytes()
-    decoded = Civ5SaveDecoder(_MULTIPLAYER_PATH).raw_header
+    decoded = _decode(_MULTIPLAYER_PATH)
     header_end = decoded.header_length
 
     with pytest.raises(Civ5SaveHeaderDecodeError, match="quick.signature"):
-        _ = _decoder_for_bytes(
-            tmp_path, b"NOPE" + data[4:], "bad-signature.Civ5Save"
-        ).raw_header
+        _ = decode_header_bytes_impl(b"NOPE" + data[4:])
     with pytest.raises(Civ5SaveHeaderDecodeError, match="outer_version"):
-        _ = _decoder_for_bytes(
-            tmp_path,
-            replace_unsigned(data, 4, 4, 7),
-            "bad-version.Civ5Save",
-        ).raw_header
+        _ = decode_header_bytes_impl(replace_unsigned(data, 4, 4, 7))
     with pytest.raises(Civ5SaveHeaderDecodeError, match="length is zero"):
-        _ = _decoder_for_bytes(
-            tmp_path,
-            data[:header_end] + b"\x00\x00\x00\x00",
-            "zero-chunk.Civ5Save",
-        ).raw_header
+        _ = decode_header_bytes_impl(data[:header_end] + b"\x00\x00\x00\x00")
     with pytest.raises(Civ5SaveHeaderDecodeError, match="invalid RFC 1950"):
-        _ = _decoder_for_bytes(
-            tmp_path,
-            data[:header_end] + b"\x02\x00\x00\x00NO",
-            "bad-zlib-header.Civ5Save",
-        ).raw_header
+        _ = decode_header_bytes_impl(data[:header_end] + b"\x02\x00\x00\x00NO")
     with pytest.raises(Civ5SaveHeaderDecodeError, match="truncated"):
-        _ = _decoder_for_bytes(
-            tmp_path,
-            data[:header_end] + b"\x05\x00\x00\x00\x78\x9c",
-            "truncated-chunk.Civ5Save",
-        ).raw_header
+        _ = decode_header_bytes_impl(data[:header_end] + b"\x05\x00\x00\x00\x78\x9c")
 
 
 def test_supplied_save_count() -> None:
@@ -234,7 +210,7 @@ def test_supplied_save_count() -> None:
     ids=tuple(path.name for path in _SAVE_PATHS),
 )
 def test_supplied_save_decodes(path: Path) -> None:
-    header = Civ5SaveDecoder(path).raw_header
+    header = _decode(path)
 
     assert header.quick.build == "403694"
     assert header.pregame.version == 6

@@ -6,21 +6,38 @@ import pytest
 
 from savefile_reverse_engineer import (
     Civ5SaveDecoder,
-    CvPlayerDecodeError,
     ProductionOrderType,
 )
-from savefile_reverse_engineer._firaxis_hash import firaxis_hash
-from savefile_reverse_engineer.cv_player import (
-    _read_city_buildings,  # pyright: ignore[reportPrivateUsage]
-    iterate_players_from_payload_impl,
+from savefile_reverse_engineer._raw._shared.firaxis_hash import firaxis_hash
+from savefile_reverse_engineer._raw.header.decoder import (
+    decode_header_bytes_impl,
+    decompress_payload_bytes_impl,
 )
-from savefile_reverse_engineer.raw import (
+from savefile_reverse_engineer._raw.map.payload_locator import (
+    locate_cv_plots,
+    locate_cv_teams,
+)
+from savefile_reverse_engineer._raw.player.cities import (
+    read_city_buildings,
+    read_city_yield_values,
+)
+from savefile_reverse_engineer._raw.player.city_models import (
     CvCityBuildings,
-    decode_player_array_bytes,
 )
-from savefile_reverse_engineer.raw import (
+from savefile_reverse_engineer._raw.player.city_models import (
     ProductionOrderType as RawProductionOrderType,
 )
+from savefile_reverse_engineer._raw.player.decoder import (
+    decode_player_array_bytes_impl as decode_player_array_bytes,
+)
+from savefile_reverse_engineer._raw.player.decoder import (
+    iterate_players_from_payload_impl,
+)
+from savefile_reverse_engineer._raw.player.infrastructure import (
+    CvPlayerDecodeError,
+    PlayerReader,
+)
+from savefile_reverse_engineer._raw.team.decoder import iterate_teams_from_payload_impl
 
 _PROJECT_ROOT = Path(__file__).parent.parent
 _SAVE_PATH = (
@@ -47,9 +64,32 @@ _requires_early_save = pytest.mark.skipif(
 )
 
 
+def _payload(path: Path) -> bytes:
+    save_bytes = path.read_bytes()
+    return decompress_payload_bytes_impl(
+        save_bytes, decode_header_bytes_impl(save_bytes)
+    )
+
+
+def _player_array_inputs(
+    path: Path,
+) -> tuple[bytes, int, tuple[tuple[int, int], ...]]:
+    payload = _payload(path)
+    plot_location = locate_cv_plots(payload)
+    team_location = locate_cv_teams(payload, plot_location)
+    teams = tuple(
+        iterate_teams_from_payload_impl(payload, byte_offset=team_location.byte_offset)
+    )
+    return (
+        payload,
+        teams[-1].byte_offset + teams[-1].byte_length,
+        tuple((team.total_population, team.total_land) for team in teams),
+    )
+
+
 @_requires_save
 def test_decodes_participant_players_and_nested_objects() -> None:
-    players = tuple(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    players = Civ5SaveDecoder(_SAVE_PATH).players
 
     assert [player.player_index for player in players] == [
         0,
@@ -85,7 +125,14 @@ def test_decodes_participant_players_and_nested_objects() -> None:
 
 @_requires_save
 def test_decodes_raw_player_policy_information() -> None:
-    raw_player = next(Civ5SaveDecoder(_SAVE_PATH)._iter_raw_players())  # pyright: ignore[reportPrivateUsage]
+    payload, player_offset, expected_totals = _player_array_inputs(_SAVE_PATH)
+    raw_player = next(
+        iterate_players_from_payload_impl(
+            payload,
+            byte_offset=player_offset,
+            expected_totals=expected_totals,
+        )
+    )
     information = raw_player.policy_information
     owned_by_name = {
         policy.policy_type.name: policy.owned
@@ -96,9 +143,10 @@ def test_decodes_raw_player_policy_information() -> None:
     assert information.byte_offset == 0x428708
     assert information.version == 2
     assert len(information.policy_slots) == _POLICY_SLOT_COUNT
-    assert sum(
-        policy.policy_type.hash_value == 0 for policy in information.policy_slots
-    ) == 14
+    assert (
+        sum(policy.policy_type.hash_value == 0 for policy in information.policy_slots)
+        == 14
+    )
     assert all(
         policy.policy_type.hash_value == 0 or policy.policy_type.name is not None
         for policy in information.policy_slots
@@ -125,7 +173,7 @@ def test_decodes_raw_player_policy_information() -> None:
 
 @_requires_save
 def test_decodes_semantic_player_policy_information() -> None:
-    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    player = Civ5SaveDecoder(_SAVE_PATH).players[0]
     information = player.policy_information
     branches = {branch.branch_type.key: branch for branch in information.branches}
 
@@ -144,8 +192,7 @@ def test_decodes_semantic_player_policy_information() -> None:
     assert branches["POLICY_BRANCH_EXPLORATION"].unlocked is True
     assert branches["POLICY_BRANCH_LIBERTY"].unlocked is False
     assert [
-        policy.key
-        for policy in branches["POLICY_BRANCH_TRADITION"].owned_policies
+        policy.key for policy in branches["POLICY_BRANCH_TRADITION"].owned_policies
     ] == [
         "POLICY_TRADITION",
         "POLICY_ARISTOCRACY",
@@ -159,7 +206,7 @@ def test_decodes_semantic_player_policy_information() -> None:
 
 @_requires_early_save
 def test_preserves_multiple_partial_branch_policies() -> None:
-    player = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players())
+    player = Civ5SaveDecoder(_EARLY_SAVE_PATH).players[0]
     tradition = next(
         branch
         for branch in player.policy_information.branches
@@ -176,7 +223,7 @@ def test_preserves_multiple_partial_branch_policies() -> None:
 
 @_requires_save
 def test_decodes_semantic_city_fields_and_ownership() -> None:
-    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    player = Civ5SaveDecoder(_SAVE_PATH).players[0]
     cities = player.cities
 
     assert [city.city_id for city in cities] == [8192, 16385, 24578, 32771]
@@ -199,7 +246,7 @@ def test_decodes_semantic_city_fields_and_ownership() -> None:
 
 @_requires_save
 def test_decodes_semantic_city_yield_vectors() -> None:
-    capital = next(Civ5SaveDecoder(_SAVE_PATH).iter_cities())
+    capital = Civ5SaveDecoder(_SAVE_PATH).cities[0]
     vectors = capital.yield_vectors
 
     assert vectors.base_yield_rate_from_terrain.science == 0
@@ -215,7 +262,7 @@ def test_decodes_semantic_city_yield_vectors() -> None:
 
 @_requires_save
 def test_decodes_only_present_city_buildings() -> None:
-    cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
+    cities = Civ5SaveDecoder(_SAVE_PATH).players[0].cities
 
     second_city_by_name = {
         entry.building_type.key: entry for entry in cities[1].buildings
@@ -236,7 +283,7 @@ def test_decodes_only_present_city_buildings() -> None:
 
 @_requires_save
 def test_decodes_city_production_queue_and_current_building() -> None:
-    cities = next(Civ5SaveDecoder(_SAVE_PATH).iter_players()).cities
+    cities = Civ5SaveDecoder(_SAVE_PATH).players[0].cities
 
     assert [len(city.production_queue) for city in cities] == [1, 1, 1, 1]
     assert all(city.current_production == city.production_queue[0] for city in cities)
@@ -264,7 +311,7 @@ def test_decodes_city_production_queue_and_current_building() -> None:
 
 @_requires_early_save
 def test_unit_current_production_has_no_decoded_progress() -> None:
-    cities = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players()).cities
+    cities = Civ5SaveDecoder(_EARLY_SAVE_PATH).players[0].cities
 
     assert [
         city.current_production.item_type.key
@@ -286,7 +333,7 @@ def test_unit_current_production_has_no_decoded_progress() -> None:
 
 @_requires_early_save
 def test_writer_guided_city_probe_rejects_false_prefix_markers() -> None:
-    cities = next(Civ5SaveDecoder(_EARLY_SAVE_PATH).iter_players()).cities
+    cities = Civ5SaveDecoder(_EARLY_SAVE_PATH).players[0].cities
 
     assert [city.city_id for city in cities] == [8192, 16385]
     assert [(city.x, city.y) for city in cities] == [(11, 16), (16, 14)]
@@ -295,7 +342,7 @@ def test_writer_guided_city_probe_rejects_false_prefix_markers() -> None:
 
 @_requires_save
 def test_decodes_unit_ids_coordinates_and_deleted_slots() -> None:
-    player = next(Civ5SaveDecoder(_SAVE_PATH).iter_players())
+    player = Civ5SaveDecoder(_SAVE_PATH).players[0]
     units = player.units
 
     assert units[0].unit_id == 57344
@@ -307,34 +354,40 @@ def test_decodes_unit_ids_coordinates_and_deleted_slots() -> None:
 
 
 @_requires_save
-def test_returns_fresh_nested_results() -> None:
+def test_returns_cached_nested_results() -> None:
     decoder = Civ5SaveDecoder(_SAVE_PATH)
-    first = next(decoder.iter_players())
-    repeated = next(decoder.iter_players())
+    first = decoder.players[0]
+    repeated = decoder.players[0]
 
     assert repeated == first
-    assert repeated is not first
-    assert repeated.cities[0] is not first.cities[0]
+    assert repeated is first
+    assert repeated.cities[0] is first.cities[0]
 
 
 @_requires_save
 def test_nested_errors_keep_absolute_player_context() -> None:
-    source = Civ5SaveDecoder(_SAVE_PATH)
-    payload = bytearray(source.payload_bytes)
-    payload[0x44F557:0x44F55B] = (7).to_bytes(4, "little")
-
-    teams = tuple(
-        source._iter_raw_teams()  # pyright: ignore[reportPrivateUsage]
+    valid_payload, player_offset, expected_totals = _player_array_inputs(_SAVE_PATH)
+    first_player = next(
+        iterate_players_from_payload_impl(
+            valid_payload,
+            byte_offset=player_offset,
+            expected_totals=expected_totals,
+        )
     )
-    expected_totals = tuple((team.total_population, team.total_land) for team in teams)
+    invalid_version_offset = first_player.cities.entries[0].byte_offset
+    payload = bytearray(valid_payload)
+    payload[invalid_version_offset : invalid_version_offset + 4] = (7).to_bytes(
+        4, "little"
+    )
+
     players = iterate_players_from_payload_impl(
-        bytes(payload), byte_offset=0x42513D, expected_totals=expected_totals
+        bytes(payload), byte_offset=player_offset, expected_totals=expected_totals
     )
     with pytest.raises(CvPlayerDecodeError) as raised:
         _ = next(players)
 
     assert raised.value.player_index == 0
-    assert raised.value.offset == 0x44F557
+    assert raised.value.offset == invalid_version_offset
     assert raised.value.field == "cities.entries[0].version"
 
 
@@ -438,14 +491,8 @@ def _synthetic_policy_information() -> bytes:
     return b"".join(
         (
             (2).to_bytes(4, "little"),
-            *(
-                _hashed_bool_array(policy_hashes, policy_values)
-                for _ in range(3)
-            ),
-            *(
-                _hashed_bool_array(branch_hashes, branch_values)
-                for _ in range(2)
-            ),
+            *(_hashed_bool_array(policy_hashes, policy_values) for _ in range(3)),
+            *(_hashed_bool_array(branch_hashes, branch_values) for _ in range(2)),
         )
     )
 
@@ -704,6 +751,31 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert players[1].cities.entries == ()
 
 
+def test_city_yield_vector_rejects_wrong_count() -> None:
+    reader = PlayerReader((6).to_bytes(4, "little") + bytes(6 * 4), 0, 3)
+
+    with pytest.raises(CvPlayerDecodeError) as raised:
+        _ = read_city_yield_values(reader, field="city.yields")
+
+    assert raised.value.offset == 0
+    assert raised.value.player_index == 3
+    assert raised.value.field == "city.yields.count"
+    assert "expected 7" in raised.value.message
+
+
+def test_city_yield_vector_reports_truncated_value() -> None:
+    data = bytes(10) + (7).to_bytes(4, "little") + bytes(6 * 4)
+    reader = PlayerReader(data, 10, 4)
+
+    with pytest.raises(CvPlayerDecodeError) as raised:
+        _ = read_city_yield_values(reader, field="city.yields")
+
+    assert raised.value.offset == 38
+    assert raised.value.player_index == 4
+    assert raised.value.field == "city.yields.golden_age_points"
+    assert "truncated" in raised.value.message
+
+
 def _policy_array_starts(data: bytes | bytearray, start: int) -> tuple[int, ...]:
     starts: list[int] = []
     offset = start + 4
@@ -795,6 +867,25 @@ def test_rejects_unknown_city_production_order(
         _ = tuple(decode_player_array_bytes(bytes(data)))
 
 
+def test_rejects_queued_building_absent_from_inventory(
+    synthetic_player_array: bytes,
+) -> None:
+    first_player = next(decode_player_array_bytes(synthetic_player_array))
+    order = first_player.cities.entries[0].production_queue[0]
+    item_offset = order.byte_offset + 4
+    absent_building_hash = 0x87654321
+    data = bytearray(synthetic_player_array)
+    data[item_offset : item_offset + 4] = absent_building_hash.to_bytes(4, "little")
+
+    with pytest.raises(CvPlayerDecodeError) as raised:
+        _ = tuple(decode_player_array_bytes(bytes(data)))
+
+    assert raised.value.offset == item_offset
+    assert raised.value.player_index == 0
+    assert raised.value.field == "cities.entries[0].production_queue[0].item"
+    assert "absent from the inventory" in raised.value.message
+
+
 def test_rejects_city_production_queue_over_capacity(
     synthetic_player_array: bytes,
 ) -> None:
@@ -845,7 +936,7 @@ def _building_array_starts(data: bytes | bytearray) -> tuple[int, ...]:
 
 
 def _decode_buildings(data: bytes) -> CvCityBuildings:
-    return _read_city_buildings(
+    return read_city_buildings(
         data,
         start=0,
         end=len(data),

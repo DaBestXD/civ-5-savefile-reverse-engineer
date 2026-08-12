@@ -6,14 +6,18 @@ from pathlib import Path
 
 import pytest
 
-from savefile_reverse_engineer.raw import (
-    CvPlot,
+from savefile_reverse_engineer._raw._shared.types import RouteType
+from savefile_reverse_engineer._raw.map.decoder import (
     CvPlotDecodeError,
+)
+from savefile_reverse_engineer._raw.map.decoder import (
+    decode_plot_array_bytes_impl as decode_plot_array_bytes,
+)
+from savefile_reverse_engineer._raw.map.models import (
+    CvPlot,
     FlowDirection,
     PlotType,
-    RouteType,
     TerrainType,
-    decode_plot_array_bytes,
 )
 from tests._binary_helpers import replace_unsigned
 
