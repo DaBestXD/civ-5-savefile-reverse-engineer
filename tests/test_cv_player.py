@@ -46,10 +46,14 @@ _SAVE_PATH = (
 _EARLY_SAVE_PATH = (
     _PROJECT_ROOT / "test-save-file/multi-player/AutoSave_Post_0027 BC-2380.Civ5Save"
 )
+_SPECIALIST_SAVE_PATH = (
+    _PROJECT_ROOT / "test-save-file/multi-player/AutoSave_Post_0075 AD-0001.Civ5Save"
+)
 _UNKNOWN_BUILDING_HASH = 0x12345678
 _BUILDING_TYPE_COUNT = 268
 _UNIT_TYPE_COUNT = 265
 _IMPROVEMENT_TYPE_COUNT = 46
+_CITY_SPECIALIST_TYPE_COUNT = 7
 _UNIT_COMBAT_TYPE_COUNT = 18
 _PROMOTION_TYPE_COUNT = 340
 _POLICY_SLOT_COUNT = 138
@@ -61,6 +65,10 @@ _requires_save = pytest.mark.skipif(
 _requires_early_save = pytest.mark.skipif(
     not _EARLY_SAVE_PATH.is_file(),
     reason="the early local Lekmod v34.11 save is unavailable",
+)
+_requires_specialist_save = pytest.mark.skipif(
+    not _SPECIALIST_SAVE_PATH.is_file(),
+    reason="the local specialist Lekmod v34.11 save is unavailable",
 )
 
 
@@ -258,6 +266,24 @@ def test_decodes_semantic_city_yield_vectors() -> None:
     assert vectors.yield_per_population_x100.science == 50
     assert vectors.yield_rate_modifier.science == 0
     assert vectors.production_to_yield_modifier.science == 0
+
+
+@_requires_specialist_save
+def test_decodes_authoritative_city_specialists() -> None:
+    capital = Civ5SaveDecoder(_SPECIALIST_SAVE_PATH).cities[0]
+    specialists = {
+        state.specialist_type.key: state for state in capital.citizens.specialists
+    }
+
+    assert len(specialists) == _CITY_SPECIALIST_TYPE_COUNT
+    assert specialists["SPECIALIST_ENGINEER"].assigned_count == 1
+    assert specialists["SPECIALIST_ENGINEER"].great_person_progress_x100 == 5520
+    assert specialists["SPECIALIST_SCIENTIST"].assigned_count == 0
+    assert specialists["SPECIALIST_SCIENTIST"].great_person_progress_x100 == 2660
+    assert capital.citizens.citizens_working_plots == 15
+    assert sum(state.assigned_count for state in specialists.values()) == 1
+    assert capital.citizens.unassigned_citizens == 0
+    assert len(capital.citizens.working_plot_flags) == 37
 
 
 @_requires_save
@@ -572,12 +598,50 @@ def _synthetic_city_after_buildings() -> bytes:
             save=True,
         ),
     )
+    specialist_hashes = tuple(
+        firaxis_hash(name)
+        for name in (
+            "SPECIALIST_CITIZEN",
+            "SPECIALIST_WRITER",
+            "SPECIALIST_ARTIST",
+            "SPECIALIST_MUSICIAN",
+            "SPECIALIST_SCIENTIST",
+            "SPECIALIST_MERCHANT",
+            "SPECIALIST_ENGINEER",
+        )
+    )
+    specialist_counts = (0, 0, 0, 0, 2, 0, 1)
+    citizens = b"".join(
+        (
+            _i32_values((1,)),
+            bytes((0, 1)),
+            _i32_values((0, 4, 1, -1)),
+            bytes((0,)),
+            bytes((1, 1, 1, 1, *(0 for _ in range(33)))),
+            bytes((1, *(0 for _ in range(36)))),
+            _i32_values((0, 0)),
+            _hashed_int_array(specialist_hashes, specialist_counts),
+            _hashed_int_array(specialist_hashes, (0, 0, 0, 0, 2400, 0, 1200)),
+            _hashed_int_array(
+                _synthetic_building_hashes(),
+                _values_with(0, {0: 1, 1: 2, 3: None}),
+            ),
+            _hashed_int_array(
+                _synthetic_building_hashes(),
+                _values_with(0, {1: 1, 3: None}),
+            ),
+            _hashed_int_array(specialist_hashes, (0, 0, 0, 0, 3, 0, 2)),
+        )
+    )
     return b"".join(
         (
             _i32_values((0, 0)),
             zero_unit_array,
             zero_unit_array,
-            *(_int_vector(tuple(0 for _ in range(7))) for _ in range(4)),
+            *(
+                _int_vector(tuple(0 for _ in range(_CITY_SPECIALIST_TYPE_COUNT)))
+                for _ in range(4)
+            ),
             _int_vector(tuple(0 for _ in range(_IMPROVEMENT_TYPE_COUNT))),
             *(
                 _int_vector(tuple(0 for _ in range(_UNIT_COMBAT_TYPE_COUNT)))
@@ -586,6 +650,7 @@ def _synthetic_city_after_buildings() -> bytes:
             zero_promotion_array,
             len(orders).to_bytes(4, "little"),
             *orders,
+            citizens,
         )
     )
 
@@ -712,6 +777,7 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert policy_information.branches[0].unlocked is True
     assert players[0].cities.entries[0].population == 7
     yield_vectors = players[0].cities.entries[0].yield_vectors
+    citizens = players[0].cities.entries[0].citizens
     assert yield_vectors.sea_plot_yield.food == 0
     assert yield_vectors.base_yield_rate_from_terrain.science == 43
     assert yield_vectors.base_yield_rate_from_buildings.science == 53
@@ -727,6 +793,21 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert yield_vectors.resource_yield_rate_modifier.science == 153
     assert yield_vectors.extra_specialist_yield.science == 163
     assert yield_vectors.production_to_yield_modifier.science == 173
+    assert [state.assigned_count for state in citizens.specialists] == [
+        0,
+        0,
+        0,
+        0,
+        2,
+        0,
+        1,
+    ]
+    assert citizens.specialists[4].specialist.name == "SPECIALIST_SCIENTIST"
+    assert citizens.specialists[4].great_person_progress_times_100 == 2400
+    assert citizens.specialists[6].specialist.name == "SPECIALIST_ENGINEER"
+    assert [state.assigned_count for state in citizens.building_specialists] == [1, 2]
+    assert [state.forced_count for state in citizens.building_specialists] == [0, 1]
+    assert citizens.citizens_working_plots == 4
     assert len(buildings.entries) == _BUILDING_TYPE_COUNT
     assert entries_by_hash[firaxis_hash("BUILDING_GRANARY")].real_count == 1
     assert entries_by_hash[firaxis_hash("BUILDING_LIBRARY")].free_count == 1
@@ -749,6 +830,21 @@ def test_bytes_only_decoder_uses_exact_structural_path(
     assert players[0].units.entries[0].unit_hash == firaxis_hash("UNIT_WORKER")
     assert players[0].units.entries[0].unit_name == "UNIT_WORKER"
     assert players[1].cities.entries == ()
+
+
+def test_city_citizens_rejects_wrong_specialist_hash_order(
+    synthetic_player_array: bytes,
+) -> None:
+    data = bytearray(synthetic_player_array)
+    specialist_hash = firaxis_hash("SPECIALIST_CITIZEN").to_bytes(4, "little")
+    hash_offset = data.index(specialist_hash)
+    data[hash_offset : hash_offset + 4] = _UNKNOWN_BUILDING_HASH.to_bytes(4, "little")
+
+    with pytest.raises(CvPlayerDecodeError) as raised:
+        _ = tuple(decode_player_array_bytes(bytes(data)))
+
+    assert raised.value.field == "cities.entries[0].citizens"
+    assert "found 0 source-shaped" in raised.value.message
 
 
 def test_city_yield_vector_rejects_wrong_count() -> None:

@@ -160,6 +160,41 @@ The raw and semantic `CvCity` records group these fields under
 `yield_vectors`. The per-population and per-religion vectors use hundredths.
 The rate and production-conversion vectors contain percentage modifiers.
 
+## Confirmed CvCityCitizens specialist state
+
+Four legacy length-prefixed specialist vectors and one improvement vector
+appear after `CvCityBuildings`. Lekmod writes these as zero-filled compatibility
+data, so they are consumed for alignment but are not exposed as city state.
+
+The authoritative assignments are in the later version 1 `CvCityCitizens`
+subobject. It starts with automation flags, citizen counts, the focus index,
+37 worked-plot flags, 37 forced-worked-plot flags, and the default-specialist
+counts. Five hashed integer arrays then follow:
+
+| Array | Entries | Meaning |
+|---|---:|---|
+| Specialist counts | 7 | Currently assigned specialists |
+| Great-person progress | 7 | Progress in hundredths |
+| Building specialist counts | 268 | Assigned specialists by building |
+| Forced building specialist counts | 268 | Forced assignments by building |
+| Building great-person rate changes | 7 | Rate changes by specialist type |
+
+The three specialist arrays use this saved hash order:
+
+| Index | Specialist |
+|---:|---|
+| 0 | Citizen |
+| 1 | Writer |
+| 2 | Artist |
+| 3 | Musician |
+| 4 | Scientist |
+| 5 | Merchant |
+| 6 | Engineer |
+
+The public API resolves each hash to a `GameType` and exposes this object as
+`CvCity.citizens`. The citizen block has no separate authoritative maximum or
+free-specialist vector.
+
 ## Confirmed CvCityBuildings inventory
 
 `CvCityBuildings` follows the city name, script data, resource arrays, and
@@ -204,8 +239,9 @@ but are not yet exposed.
 
 The decoder follows the remaining source-order containers after
 `CvCityBuildings` to reach `m_orderQueue`: two hashed unit-production arrays,
-seven integer vectors, and a hashed free-promotion array. These intervening
-containers are validated but not exposed.
+four legacy specialist-count vectors, a legacy improvement free-specialist
+vector, two unit-combat vectors, and a hashed free-promotion array. These
+intervening containers are validated but are not exposed.
 
 The queue begins with a four-byte entry count. Each entry then contains:
 

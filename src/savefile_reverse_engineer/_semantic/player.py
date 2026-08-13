@@ -9,8 +9,11 @@ from .._raw.player.city_models import ProductionOrder as RawProductionOrder
 from .._raw.player.models import CvPlayer as RawCvPlayer
 from .._raw.player.unit_models import CvUnit as RawCvUnit
 from ..models import (
+    CityBuildingSpecialistState,
     CityBuildingState,
     CityBuildingStats,
+    CityCitizenState,
+    CitySpecialistState,
     CityYieldValues,
     CityYieldVectors,
     CvCity,
@@ -128,6 +131,42 @@ def _city_yield_vectors(vectors: RawCityYieldVectors) -> CityYieldVectors:
     )
 
 
+def _city_citizens(city: RawCvCity) -> CityCitizenState:
+    citizens = city.citizens
+    return CityCitizenState(
+        automated=citizens.automated,
+        no_auto_assign_specialists=citizens.no_auto_assign_specialists,
+        unassigned_citizens=citizens.unassigned_citizens,
+        citizens_working_plots=citizens.citizens_working_plots,
+        forced_working_plots=citizens.forced_working_plots,
+        focus_type_index=citizens.focus_type_index,
+        avoid_growth=citizens.avoid_growth,
+        working_plot_flags=citizens.working_plot_flags,
+        forced_working_plot_flags=citizens.forced_working_plot_flags,
+        default_specialists=citizens.default_specialists,
+        forced_default_specialists=citizens.forced_default_specialists,
+        specialists=tuple(
+            CitySpecialistState(
+                specialist_type=game_type(state.specialist),
+                assigned_count=state.assigned_count,
+                great_person_progress_x100=(state.great_person_progress_times_100),
+                building_great_people_rate_change=(
+                    state.building_great_people_rate_change
+                ),
+            )
+            for state in citizens.specialists
+        ),
+        building_specialists=tuple(
+            CityBuildingSpecialistState(
+                building_type=game_type(state.building),
+                assigned_count=state.assigned_count,
+                forced_count=state.forced_count,
+            )
+            for state in citizens.building_specialists
+        ),
+    )
+
+
 def _building_production(
     city: RawCvCity,
     order: RawProductionOrder,
@@ -187,6 +226,7 @@ def _city(city: RawCvCity, owner_player_index: int) -> CvCity:
         culture_stored_x100=city.culture_stored_times_100,
         culture_level=city.culture_level,
         yield_vectors=_city_yield_vectors(city.yield_vectors),
+        citizens=_city_citizens(city),
         building_stats=CityBuildingStats(
             production_modifier=inventory.production_modifier,
             defense=inventory.defense,

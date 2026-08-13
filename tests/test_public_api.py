@@ -37,6 +37,9 @@ def test_package_root_exports_only_the_curated_api() -> None:
     exports = set(public_api.__all__)
 
     assert exports == {
+        "CityBuildingSpecialistState",
+        "CityCitizenState",
+        "CitySpecialistState",
         "CityYieldValues",
         "CityYieldVectors",
         "Civ5SaveDecoder",
@@ -95,7 +98,10 @@ def test_domain_modules_export_only_their_public_models() -> None:
     }
     assert set(player_api.__all__) == {
         "CityBuildingState",
+        "CityBuildingSpecialistState",
         "CityBuildingStats",
+        "CityCitizenState",
+        "CitySpecialistState",
         "CityYieldValues",
         "CityYieldVectors",
         "CvCity",

@@ -10,6 +10,9 @@ from .errors import (
     CvTeamDecodeError,
 )
 from .models import (
+    CityBuildingSpecialistState,
+    CityCitizenState,
+    CitySpecialistState,
     CityYieldValues,
     CityYieldVectors,
     CvCity,
@@ -36,6 +39,9 @@ from .models import (
 )
 
 __all__ = (
+    "CityBuildingSpecialistState",
+    "CityCitizenState",
+    "CitySpecialistState",
     "CityYieldValues",
     "CityYieldVectors",
     "Civ5SaveDecoder",

@@ -1,8 +1,11 @@
 """Public semantic player, city, and unit models."""
 
 from .models import (
+    CityBuildingSpecialistState,
     CityBuildingState,
     CityBuildingStats,
+    CityCitizenState,
+    CitySpecialistState,
     CityYieldValues,
     CityYieldVectors,
     CvCity,
@@ -16,8 +19,11 @@ from .models import (
 )
 
 __all__ = (
+    "CityBuildingSpecialistState",
     "CityBuildingState",
     "CityBuildingStats",
+    "CityCitizenState",
+    "CitySpecialistState",
     "CityYieldValues",
     "CityYieldVectors",
     "CvCity",

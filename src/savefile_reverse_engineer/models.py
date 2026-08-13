@@ -296,6 +296,44 @@ class CityYieldVectors:
 
 
 @dataclass(frozen=True, slots=True)
+class CitySpecialistState:
+    """One specialist type's current state in a city."""
+
+    specialist_type: GameType
+    assigned_count: int
+    great_person_progress_x100: int
+    building_great_people_rate_change: int
+
+
+@dataclass(frozen=True, slots=True)
+class CityBuildingSpecialistState:
+    """Current specialist assignments in one city building."""
+
+    building_type: GameType
+    assigned_count: int
+    forced_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CityCitizenState:
+    """Authoritative citizen and specialist state for one city."""
+
+    automated: bool
+    no_auto_assign_specialists: bool
+    unassigned_citizens: int
+    citizens_working_plots: int
+    forced_working_plots: int
+    focus_type_index: int
+    avoid_growth: bool
+    working_plot_flags: tuple[bool, ...]
+    forced_working_plot_flags: tuple[bool, ...]
+    default_specialists: int
+    forced_default_specialists: int
+    specialists: tuple[CitySpecialistState, ...]
+    building_specialists: tuple[CityBuildingSpecialistState, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ProductionOrder:
     """One item in a city's production queue, in queue order."""
 
@@ -348,6 +386,7 @@ class CvCity:
     culture_stored_x100: int
     culture_level: int
     yield_vectors: CityYieldVectors
+    citizens: CityCitizenState
     building_stats: CityBuildingStats
     buildings: tuple[CityBuildingState, ...]
     current_production: ProductionOrder | None
@@ -478,8 +517,11 @@ class CvTeam:
 
 
 __all__ = (
+    "CityBuildingSpecialistState",
     "CityBuildingState",
     "CityBuildingStats",
+    "CityCitizenState",
+    "CitySpecialistState",
     "CityYieldValues",
     "CityYieldVectors",
     "CvCity",

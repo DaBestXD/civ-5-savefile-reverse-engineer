@@ -5,28 +5,34 @@ from dataclasses import dataclass
 
 from .._catalogue.buildings import BUILDING_HASH_NAMES
 from .._catalogue.production import PROJECT_HASH_NAMES
+from .._catalogue.specialists import SPECIALIST_HASH_NAMES, SPECIALIST_HASHES
 from .._catalogue.units import UNIT_HASH_NAMES
 from .._shared.binary_reader import read_u32_count
 from .._shared.free_list import FREE_LIST_INDEX_MASK
 from .._shared.types import HashedType, resolve_hashed_type
 from .city_models import (
+    CityBuildingSpecialistState,
     CityBuildingState,
+    CitySpecialistState,
     CityYieldValues,
     CityYieldVectors,
     CvCity,
     CvCityBuildings,
+    CvCityCitizens,
     ProductionOrder,
     ProductionOrderType,
 )
 from .constants import (
     CITY_BUILDING_TYPE_COUNT,
     CITY_BUILDINGS_VERSION,
+    CITY_CITIZENS_VERSION,
     CITY_DOMAIN_COUNT,
     CITY_DOMAIN_VECTORS,
     CITY_FLAGS_AFTER_SCALARS,
     CITY_IMPROVEMENT_COUNT,
     CITY_OWNER_FIELDS,
     CITY_PLAYER_COUNT,
+    CITY_PLOT_COUNT,
     CITY_PRODUCTION_QUEUE_CAPACITY,
     CITY_PROJECT_COUNT,
     CITY_RESOURCE_COUNT,
@@ -64,16 +70,24 @@ class _HashedIntEntry:
     hash_offset: int
 
 
-def _skip_exact_int_vector(
+@dataclass(slots=True)
+class _CityPostBuildingState:
+    byte_end: int
+    production_queue: tuple[ProductionOrder, ...]
+
+
+def _read_exact_int_vector(
     reader: PlayerReader, *, count: int, field: str
-) -> None:
+) -> tuple[int, ...]:
     _ = read_u32_count(reader, field, expected=count)
-    _ = reader.read_bytes(count * 4, f"{field}.values")
+    return tuple(reader.i32(f"{field}[{index}]") for index in range(count))
 
 
-def _skip_exact_bool_vector(
-    reader: PlayerReader, *, count: int, field: str
-) -> None:
+def _skip_exact_int_vector(reader: PlayerReader, *, count: int, field: str) -> None:
+    _ = _read_exact_int_vector(reader, count=count, field=field)
+
+
+def _skip_exact_bool_vector(reader: PlayerReader, *, count: int, field: str) -> None:
     _ = read_u32_count(reader, field, expected=count)
     for index in range(count):
         _ = reader.read_bool(f"{field}[{index}]")
@@ -89,9 +103,7 @@ def _skip_exact_hashed_int_array(
             _ = reader.i32(f"{field}[{index}].value")
 
 
-def _skip_struct_vector(
-    reader: PlayerReader, *, item_size: int, field: str
-) -> None:
+def _skip_struct_vector(reader: PlayerReader, *, item_size: int, field: str) -> None:
     count = read_u32_count(reader, field)
     _ = reader.read_bytes(count * item_size, f"{field}.entries")
 
@@ -437,14 +449,14 @@ def _production_item_name(
     return None
 
 
-def read_city_production_queue(
+def read_city_post_building_state(
     data: bytes,
     *,
     start: int,
     end: int,
     record_index: int,
     player_index: int,
-) -> tuple[ProductionOrder, ...]:
+) -> _CityPostBuildingState:
     reader = PlayerReader(data, start, player_index)
     field = f"cities.entries[{record_index}]"
 
@@ -468,11 +480,16 @@ def read_city_production_queue(
             field=f"{field}.{array_name}",
         )
     for vector_name, count in (
-        ("specialist_count", CITY_SPECIALIST_COUNT),
-        ("maximum_specialist_count", CITY_SPECIALIST_COUNT),
-        ("forced_specialist_count", CITY_SPECIALIST_COUNT),
-        ("free_specialist_count", CITY_SPECIALIST_COUNT),
-        ("improvement_free_specialists", CITY_IMPROVEMENT_COUNT),
+        ("legacy_specialist_count", CITY_SPECIALIST_COUNT),
+        ("legacy_maximum_specialist_count", CITY_SPECIALIST_COUNT),
+        ("legacy_forced_specialist_count", CITY_SPECIALIST_COUNT),
+        ("legacy_free_specialist_count", CITY_SPECIALIST_COUNT),
+        ("legacy_improvement_free_specialists", CITY_IMPROVEMENT_COUNT),
+    ):
+        # These legacy CvCity vectors are zero-filled in Lekmod saves. The
+        # authoritative assignments are decoded from CvCityCitizens below.
+        _skip_exact_int_vector(reader, count=count, field=f"{field}.{vector_name}")
+    for vector_name, count in (
         ("unit_combat_free_experience", UNIT_COMBAT_COUNT),
         ("unit_combat_production_modifier", UNIT_COMBAT_COUNT),
     ):
@@ -535,7 +552,258 @@ def read_city_production_queue(
             offset=end,
             field=f"{field}.production_queue",
         )
-    return tuple(orders)
+    return _CityPostBuildingState(
+        byte_end=reader.offset,
+        production_queue=tuple(orders),
+    )
+
+
+def _read_hashed_int_array(
+    reader: PlayerReader, *, count: int, field: str
+) -> tuple[_HashedIntEntry, ...]:
+    count_offset = reader.offset
+    saved_count = reader.i32(f"{field}.count")
+    if saved_count != count:
+        reader.fail(
+            f"saved count is {saved_count}, expected {count}",
+            offset=count_offset,
+            field=f"{field}.count",
+        )
+    entries: list[_HashedIntEntry] = []
+    for index in range(count):
+        hash_offset = reader.offset
+        hash_value = reader.u32(f"{field}[{index}].type")
+        value = None if hash_value == 0 else reader.i32(f"{field}[{index}].value")
+        entries.append(_HashedIntEntry(hash_value, value, hash_offset))
+    return tuple(entries)
+
+
+def _require_hashes(
+    reader: PlayerReader,
+    entries: tuple[_HashedIntEntry, ...],
+    expected: tuple[int, ...],
+    *,
+    field: str,
+) -> None:
+    for index, entry in enumerate(entries):
+        if entry.hash_value != expected[index]:
+            reader.fail(
+                "type hash does not match the expected database order",
+                offset=entry.hash_offset,
+                field=f"{field}[{index}].type",
+            )
+
+
+def _entry_value(reader: PlayerReader, entry: _HashedIntEntry, *, field: str) -> int:
+    if entry.value is None:
+        reader.fail("non-placeholder type has no value", field=field)
+    return entry.value
+
+
+def _try_read_city_citizens(
+    data: bytes,
+    *,
+    start: int,
+    end: int,
+    population: int,
+    building_hashes: tuple[int, ...],
+    record_index: int,
+    player_index: int,
+) -> CvCityCitizens | None:
+    reader = PlayerReader(data, start, player_index)
+    field = f"cities.entries[{record_index}].citizens"
+    try:
+        version = reader.u32(f"{field}.version")
+        if version != CITY_CITIZENS_VERSION:
+            return None
+        automated = reader.read_bool(f"{field}.automated")
+        no_auto_assign_specialists = reader.read_bool(
+            f"{field}.no_auto_assign_specialists"
+        )
+        unassigned_citizens = reader.i32(f"{field}.unassigned_citizens")
+        citizens_working_plots = reader.i32(f"{field}.citizens_working_plots")
+        forced_working_plots = reader.i32(f"{field}.forced_working_plots")
+        focus_type_index = reader.i32(f"{field}.focus_type_index")
+        avoid_growth = reader.read_bool(f"{field}.avoid_growth")
+        working_plot_flags = tuple(
+            reader.read_bool(f"{field}.working_plot_flags[{index}]")
+            for index in range(CITY_PLOT_COUNT)
+        )
+        forced_working_plot_flags = tuple(
+            reader.read_bool(f"{field}.forced_working_plot_flags[{index}]")
+            for index in range(CITY_PLOT_COUNT)
+        )
+        default_specialists = reader.i32(f"{field}.default_specialists")
+        forced_default_specialists = reader.i32(f"{field}.forced_default_specialists")
+        specialist_counts = _read_hashed_int_array(
+            reader, count=CITY_SPECIALIST_COUNT, field=f"{field}.specialist_counts"
+        )
+        great_person_progress = _read_hashed_int_array(
+            reader,
+            count=CITY_SPECIALIST_COUNT,
+            field=f"{field}.great_person_progress_times_100",
+        )
+        building_assigned = _read_hashed_int_array(
+            reader,
+            count=CITY_BUILDING_TYPE_COUNT,
+            field=f"{field}.building_assigned",
+        )
+        building_forced = _read_hashed_int_array(
+            reader,
+            count=CITY_BUILDING_TYPE_COUNT,
+            field=f"{field}.building_forced",
+        )
+        great_people_rate_changes = _read_hashed_int_array(
+            reader,
+            count=CITY_SPECIALIST_COUNT,
+            field=f"{field}.building_great_people_rate_changes",
+        )
+        _require_hashes(
+            reader,
+            specialist_counts,
+            SPECIALIST_HASHES,
+            field=f"{field}.specialist_counts",
+        )
+        _require_hashes(
+            reader,
+            great_person_progress,
+            SPECIALIST_HASHES,
+            field=f"{field}.great_person_progress_times_100",
+        )
+        _require_hashes(
+            reader,
+            great_people_rate_changes,
+            SPECIALIST_HASHES,
+            field=f"{field}.building_great_people_rate_changes",
+        )
+        _require_hashes(
+            reader,
+            building_assigned,
+            building_hashes,
+            field=f"{field}.building_assigned",
+        )
+        _require_hashes(
+            reader,
+            building_forced,
+            building_hashes,
+            field=f"{field}.building_forced",
+        )
+        assigned_values = tuple(
+            _entry_value(reader, entry, field=f"{field}.specialist_counts")
+            for entry in specialist_counts
+        )
+        if not (
+            0 <= unassigned_citizens <= population
+            and 0 <= citizens_working_plots <= population
+            and 0 <= forced_working_plots <= citizens_working_plots
+            and 0 <= default_specialists <= population
+            and 0 <= forced_default_specialists <= population
+            and all(value >= 0 for value in assigned_values)
+            and unassigned_citizens + citizens_working_plots + sum(assigned_values)
+            == population
+            and reader.offset <= end
+        ):
+            return None
+        specialists = tuple(
+            CitySpecialistState(
+                specialist=resolve_hashed_type(entry.hash_value, SPECIALIST_HASH_NAMES),
+                assigned_count=assigned_values[index],
+                great_person_progress_times_100=_entry_value(
+                    reader,
+                    great_person_progress[index],
+                    field=f"{field}.great_person_progress_times_100",
+                ),
+                building_great_people_rate_change=_entry_value(
+                    reader,
+                    great_people_rate_changes[index],
+                    field=f"{field}.building_great_people_rate_changes",
+                ),
+            )
+            for index, entry in enumerate(specialist_counts)
+        )
+        building_specialists: list[CityBuildingSpecialistState] = []
+        for index, entry in enumerate(building_assigned):
+            if entry.hash_value == 0:
+                continue
+            assigned_count = _entry_value(
+                reader, entry, field=f"{field}.building_assigned[{index}]"
+            )
+            forced_count = _entry_value(
+                reader,
+                building_forced[index],
+                field=f"{field}.building_forced[{index}]",
+            )
+            if assigned_count < 0 or forced_count < 0 or forced_count > assigned_count:
+                return None
+            if assigned_count or forced_count:
+                building_specialists.append(
+                    CityBuildingSpecialistState(
+                        building=resolve_hashed_type(
+                            entry.hash_value, BUILDING_HASH_NAMES
+                        ),
+                        assigned_count=assigned_count,
+                        forced_count=forced_count,
+                    )
+                )
+    except CvPlayerDecodeError:
+        return None
+    return CvCityCitizens(
+        byte_offset=start,
+        byte_length=reader.offset - start,
+        version=version,
+        automated=automated,
+        no_auto_assign_specialists=no_auto_assign_specialists,
+        unassigned_citizens=unassigned_citizens,
+        citizens_working_plots=citizens_working_plots,
+        forced_working_plots=forced_working_plots,
+        focus_type_index=focus_type_index,
+        avoid_growth=avoid_growth,
+        working_plot_flags=working_plot_flags,
+        forced_working_plot_flags=forced_working_plot_flags,
+        default_specialists=default_specialists,
+        forced_default_specialists=forced_default_specialists,
+        specialists=specialists,
+        building_specialists=tuple(building_specialists),
+    )
+
+
+def find_city_citizens(
+    data: bytes,
+    *,
+    start: int,
+    end: int,
+    population: int,
+    building_hashes: tuple[int, ...],
+    record_index: int,
+    player_index: int,
+) -> CvCityCitizens:
+    marker = CITY_CITIZENS_VERSION.to_bytes(4, "little")
+    candidates: list[CvCityCitizens] = []
+    candidate_offset = start
+    while True:
+        candidate_offset = data.find(marker, candidate_offset, end)
+        if candidate_offset < 0:
+            break
+        candidate = _try_read_city_citizens(
+            data,
+            start=candidate_offset,
+            end=end,
+            population=population,
+            building_hashes=building_hashes,
+            record_index=record_index,
+            player_index=player_index,
+        )
+        if candidate is not None:
+            candidates.append(candidate)
+        candidate_offset += 1
+    if len(candidates) != 1:
+        raise CvPlayerDecodeError(
+            f"found {len(candidates)} source-shaped CvCityCitizens records, expected 1",
+            offset=start,
+            player_index=player_index,
+            field=f"cities.entries[{record_index}].citizens",
+        )
+    return candidates[0]
 
 
 def read_city(
@@ -565,6 +833,19 @@ def read_city(
             f"city ID {city_id} does not name free-list slot {slot_index}",
             field=f"{field}.city_id",
         )
+    x = reader.i32(f"{field}.x")
+    y = reader.i32(f"{field}.y")
+    rally_x = reader.i32(f"{field}.rally_x")
+    rally_y = reader.i32(f"{field}.rally_y")
+    game_turn_founded = reader.i32(f"{field}.game_turn_founded")
+    game_turn_acquired = reader.i32(f"{field}.game_turn_acquired")
+    population = reader.i32(f"{field}.population")
+    highest_population = reader.i32(f"{field}.highest_population")
+    great_people_created = reader.i32(f"{field}.great_people_created")
+    base_great_people_rate = reader.i32(f"{field}.base_great_people_rate")
+    great_people_rate_modifier = reader.i32(f"{field}.great_people_rate_modifier")
+    culture_stored_times_100 = reader.i32(f"{field}.culture_stored_times_100")
+    culture_level = reader.i32(f"{field}.culture_level")
     buildings = read_city_buildings(
         data,
         start=buildings_offset,
@@ -572,7 +853,7 @@ def read_city(
         record_index=record_index,
         player_index=player_index,
     )
-    production_queue = read_city_production_queue(
+    post_building_state = read_city_post_building_state(
         data,
         start=buildings.byte_offset + buildings.inventory_byte_length,
         end=end,
@@ -580,7 +861,7 @@ def read_city(
         player_index=player_index,
     )
     building_hashes = {state.building.hash_value for state in buildings.entries}
-    for order in production_queue:
+    for order in post_building_state.production_queue:
         if (
             order.order_type is ProductionOrderType.CONSTRUCT_BUILDING
             and order.item.hash_value not in building_hashes
@@ -590,6 +871,15 @@ def read_city(
                 offset=order.byte_offset + 4,
                 field=f"{field}.production_queue[{order.queue_index}].item",
             )
+    citizens = find_city_citizens(
+        data,
+        start=post_building_state.byte_end,
+        end=end,
+        population=population,
+        building_hashes=tuple(state.building.hash_value for state in buildings.entries),
+        record_index=record_index,
+        player_index=player_index,
+    )
     return CvCity(
         record_index=record_index,
         slot_index=slot_index,
@@ -598,22 +888,23 @@ def read_city(
         version=version,
         city_id=city_id,
         name_key=name_key,
-        x=reader.i32(f"{field}.x"),
-        y=reader.i32(f"{field}.y"),
-        rally_x=reader.i32(f"{field}.rally_x"),
-        rally_y=reader.i32(f"{field}.rally_y"),
-        game_turn_founded=reader.i32(f"{field}.game_turn_founded"),
-        game_turn_acquired=reader.i32(f"{field}.game_turn_acquired"),
-        population=reader.i32(f"{field}.population"),
-        highest_population=reader.i32(f"{field}.highest_population"),
-        great_people_created=reader.i32(f"{field}.great_people_created"),
-        base_great_people_rate=reader.i32(f"{field}.base_great_people_rate"),
-        great_people_rate_modifier=reader.i32(f"{field}.great_people_rate_modifier"),
-        culture_stored_times_100=reader.i32(f"{field}.culture_stored_times_100"),
-        culture_level=reader.i32(f"{field}.culture_level"),
+        x=x,
+        y=y,
+        rally_x=rally_x,
+        rally_y=rally_y,
+        game_turn_founded=game_turn_founded,
+        game_turn_acquired=game_turn_acquired,
+        population=population,
+        highest_population=highest_population,
+        great_people_created=great_people_created,
+        base_great_people_rate=base_great_people_rate,
+        great_people_rate_modifier=great_people_rate_modifier,
+        culture_stored_times_100=culture_stored_times_100,
+        culture_level=culture_level,
         yield_vectors=yield_vectors,
+        citizens=citizens,
         buildings=buildings,
-        production_queue=production_queue,
+        production_queue=post_building_state.production_queue,
     )
 
 

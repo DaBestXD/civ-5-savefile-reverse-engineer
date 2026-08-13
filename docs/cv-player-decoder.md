@@ -132,6 +132,29 @@ These are saved intermediate values, not a precomputed final yield. Final city
 science can also depend on city status, owner and area modifiers, active
 garrison state, Great Works, production conversion, and trade routes.
 
+`city.citizens` exposes the authoritative `CvCityCitizens` state used by
+Lekmod. Specialist entries carry their saved database hash and resolved key,
+so callers do not depend on a hard-coded tuple index:
+
+```python
+for city in decoder.cities:
+    specialists = {
+        state.specialist_type.key: state
+        for state in city.citizens.specialists
+    }
+    scientist = specialists["SPECIALIST_SCIENTIST"]
+    print(city.name_key, scientist.assigned_count)
+    print(scientist.great_person_progress_x100)
+    for building in city.citizens.building_specialists:
+        print(building.building_type.key, building.assigned_count)
+```
+
+The legacy assigned, maximum, forced, free, and improvement-free vectors in
+`CvCity` are still consumed for alignment, but they are not exposed because
+Lekmod saves them as zero-filled compatibility data. Forced specialist counts
+are available per building. The citizen block does not contain a separate,
+authoritative free-specialist total.
+
 Malformed records raise `CvPlayerDecodeError` with `player_index`, `offset`,
 and `field` context.
 
@@ -139,10 +162,10 @@ and `field` context.
 
 The supported raw layout is Lekmod v34.11: `CvPlayer` version 16, `CvCity`
 version 6, `CvUnit` version 9, and the pinned 8,192-slot free-list ID mask. The
-decoder does not yet expose player AI subobjects, treasury, diplomacy, city
-citizens, uncertain policy-branch arrays after the unlocked state, building
-yield changes, Great Work assignments, unit promotions, unit missions, or army
-entries.
+decoder does not yet expose player AI subobjects, treasury, diplomacy, the
+meaning of each city AI focus index, uncertain policy-branch arrays after
+the unlocked state, building yield changes, Great Work assignments, unit
+promotions, unit missions, or army entries.
 
 See the [player, city, and unit byte layout](player-information.md) for exact
 serialization details.

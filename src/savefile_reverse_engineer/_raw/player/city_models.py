@@ -81,6 +81,47 @@ class CityYieldVectors:
 
 
 @dataclass(slots=True)
+class CitySpecialistState:
+    """One specialist type's authoritative CvCityCitizens state."""
+
+    specialist: HashedType
+    assigned_count: int
+    great_person_progress_times_100: int
+    building_great_people_rate_change: int
+
+
+@dataclass(slots=True)
+class CityBuildingSpecialistState:
+    """Specialists assigned to one building in CvCityCitizens."""
+
+    building: HashedType
+    assigned_count: int
+    forced_count: int
+
+
+@dataclass(slots=True)
+class CvCityCitizens:
+    """Authoritative citizen and specialist state for one city."""
+
+    byte_offset: int
+    byte_length: int
+    version: int
+    automated: bool
+    no_auto_assign_specialists: bool
+    unassigned_citizens: int
+    citizens_working_plots: int
+    forced_working_plots: int
+    focus_type_index: int
+    avoid_growth: bool
+    working_plot_flags: tuple[bool, ...]
+    forced_working_plot_flags: tuple[bool, ...]
+    default_specialists: int
+    forced_default_specialists: int
+    specialists: tuple[CitySpecialistState, ...]
+    building_specialists: tuple[CityBuildingSpecialistState, ...]
+
+
+@dataclass(slots=True)
 class CvCityBuildings:
     """Confirmed header and inventory arrays from one CvCityBuildings object."""
 
@@ -125,6 +166,7 @@ class CvCity:
     culture_stored_times_100: int
     culture_level: int
     yield_vectors: CityYieldVectors
+    citizens: CvCityCitizens
     buildings: CvCityBuildings
     production_queue: tuple[ProductionOrder, ...]
 
